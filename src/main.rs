@@ -1,5 +1,6 @@
 mod request;
 mod request_method;
+mod response_status_code;
 
 use std::io::{Read, Result, Write};
 use std::net::{TcpListener, TcpStream};
@@ -26,7 +27,7 @@ fn handle_connection(stream: &mut TcpStream) -> Result<()> {
         }
     }
 
-    println!("Received message:\n{raw_request}\n");
+    // println!("Received message:\n{raw_request}\n");
 
     let request = parse_request(request_bytes.as_slice());
     // todo: 400 if request is malformed
