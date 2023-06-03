@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use crate::response_status_code::ResponseStatusCode;
 use crate::utils::StringUtils;
 
+const SPACE: u8 = b' ';
+static CRLF: [u8; 2] = [b'\r', b'\n'];
+
 #[derive(Debug)]
 pub struct Response {
     version: String,
@@ -31,19 +34,19 @@ impl Response {
         let mut bytes: Vec<u8> = vec![];
 
         bytes.append(&mut self.version.as_bytes_vec());
-        bytes.push(b' ');
+        bytes.push(SPACE);
         bytes.append(&mut self.status_code.as_bytes());
-        bytes.append(&mut vec![b'\r', b'\n']);
+        bytes.extend_from_slice(&CRLF);
 
         for (header_name, header_value) in self.headers.iter() {
             bytes.append(&mut header_name.as_bytes_vec());
-            bytes.push(b' ');
+            bytes.push(SPACE);
             bytes.append(&mut header_value.as_bytes_vec());
-            bytes.append(&mut vec![b'\r', b'\n']);
+            bytes.extend_from_slice(&CRLF);
         }
 
-        bytes.append(&mut vec![b'\r', b'\n']);
-        bytes.append(&mut self.body);
+        bytes.extend_from_slice(&CRLF);
+        bytes.extend_from_slice(&self.body);
 
         bytes
     }

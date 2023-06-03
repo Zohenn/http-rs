@@ -1,12 +1,10 @@
 use crate::request_method::RequestMethod;
 use std::collections::HashMap;
 use std::fmt;
+use crate::utils::{StringUtils, IteratorUtils};
 
 type Result<T> = std::result::Result<T, RequestParseError>;
-type MutableIterator<'a, T> = dyn Iterator<Item = &'a T>;
-type MutableByteIterator<'a> = MutableIterator<'a, u8>;
 
-// #[derive(Debug)]
 pub struct Request {
     pub method: RequestMethod,
     pub url: String,
@@ -30,22 +28,11 @@ impl fmt::Debug for Request {
 #[derive(Debug, Clone)]
 pub struct RequestParseError;
 
-fn take_while_clone<'a, T>(
-    iterator: &mut dyn Iterator<Item = &'a T>,
-    predicate: impl FnMut(&&T) -> bool,
-) -> Vec<T>
-where
-    T: Copy,
-{
-    iterator.take_while(predicate).map(|value| *value).collect()
-}
-
 fn take_until_crlf<'a>(iterator: &mut dyn Iterator<Item = &'a u8>) -> Result<Vec<u8>>
 where
     u8: Copy,
 {
     let mut values: Vec<u8> = vec![];
-
     let mut next_value: Option<&u8>;
 
     loop {
@@ -64,24 +51,22 @@ where
 
             values.push(*value);
         } else {
-            break;
+            return Err(RequestParseError)
         }
     }
-
-    Err(RequestParseError)
 }
 
 fn parse_request_line<'a>(
-    iterator: &mut impl Iterator<Item = &'a u8>,
+    iterator: &mut (impl Iterator<Item = &'a u8> + IteratorUtils<'a, u8>),
 ) -> Result<(RequestMethod, String, String)> {
-    let method_bytes = take_while_clone(iterator, |byte| **byte != b' ');
-    let method = RequestMethod::from_str(std::str::from_utf8(method_bytes.as_slice()).unwrap());
+    let method_bytes = iterator.take_while_copy(|byte| **byte != b' ');
+    let method = RequestMethod::from_str(std::str::from_utf8(&method_bytes).unwrap());
 
-    let url_bytes = take_while_clone(iterator, |byte| **byte != b' ');
-    let url = String::from(std::str::from_utf8(url_bytes.as_slice()).unwrap());
+    let url_bytes = iterator.take_while_copy(|byte| **byte != b' ');
+    let url = String::from_vec(url_bytes);
 
     let version_bytes = take_until_crlf(iterator)?;
-    let version = String::from(std::str::from_utf8(version_bytes.as_slice()).unwrap());
+    let version = String::from_vec(version_bytes);
 
     if method.is_some() && !url.is_empty() {
         Ok((method.unwrap(), url, version))
@@ -109,13 +94,13 @@ fn parse_headers<'a>(
             return Err(RequestParseError)
         }
 
-        let header = take_while_clone(&mut peekable_iterator, |byte| **byte != b':');
+        let header = peekable_iterator.take_while_copy(|byte| **byte != b':');
         peekable_iterator.next();
         let header_value = take_until_crlf(&mut peekable_iterator)?;
 
         headers.insert(
-            String::from(std::str::from_utf8(header.as_slice()).unwrap()),
-            String::from(std::str::from_utf8(header_value.as_slice()).unwrap()),
+            String::from_vec(header),
+            String::from_vec(header_value),
         );
     }
 }

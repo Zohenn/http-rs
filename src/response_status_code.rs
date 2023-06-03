@@ -81,7 +81,6 @@ impl ResponseStatusCode {
 
         let mut code_string: Vec<u8> = (*self as u16).to_string().as_bytes_vec();
         let mut status_string: Vec<u8> = self.to_string().as_bytes_vec();
-        println!("{}", self.to_string());
 
         bytes.append(&mut code_string);
         bytes.push(b' ');
