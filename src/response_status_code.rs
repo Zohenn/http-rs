@@ -79,7 +79,7 @@ impl ResponseStatusCode {
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut bytes: Vec<u8> = vec![];
 
-        let mut code_string: Vec<u8> = (*self as u8).to_string().as_bytes_vec();
+        let mut code_string: Vec<u8> = (*self as u16).to_string().as_bytes_vec();
         let mut status_string: Vec<u8> = self.to_string().as_bytes_vec();
         println!("{}", self.to_string());
 
