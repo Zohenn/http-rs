@@ -1,11 +1,16 @@
 mod request;
 mod request_method;
+mod response;
 mod response_status_code;
+mod utils;
 
+use crate::request::parse_request;
+use crate::response::{Response};
+use crate::response_status_code::ResponseStatusCode;
 use std::io::{Read, Result, Write};
 use std::net::{TcpListener, TcpStream};
 use std::ops::Add;
-use crate::request::parse_request;
+use crate::utils::StringUtils;
 
 fn handle_connection(stream: &mut TcpStream) -> Result<()> {
     let mut raw_request = String::new();
@@ -23,7 +28,7 @@ fn handle_connection(stream: &mut TcpStream) -> Result<()> {
                 }
                 stream_buf.fill(0);
             }
-            Err(e) => panic!("{}", e)
+            Err(e) => panic!("{}", e),
         }
     }
 
@@ -32,14 +37,14 @@ fn handle_connection(stream: &mut TcpStream) -> Result<()> {
     let request = parse_request(request_bytes.as_slice());
     // todo: 400 if request is malformed
     println!("{request:#?}\n");
-    // println!("Method: {:?}, URL: {:?}", request.method, request.url);
 
-    let mut response = String::new();
-    response = response.add("HTTP/1.1 200 OK\r\n");
-    response = response.add("Content-Type: text/html; charset=utf-8\r\n\r\n");
-    response = response.add("<html><body><h1>Hello</h2></body></html>");
+    let mut response = Response::builder()
+        .status_code(ResponseStatusCode::Ok)
+        .header("Content-Type", "text/html; charset=utf-8")
+        .body(String::from("<html><body><h1>Hello</h2></body></html>").as_bytes_vec())
+        .get();
 
-    stream.write_all(response.as_bytes())?;
+    stream.write_all(&response.as_bytes())?;
 
     Ok(())
 }

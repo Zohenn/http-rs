@@ -1,6 +1,7 @@
+use crate::utils::StringUtils;
 use std::fmt::{Debug, Display, Formatter};
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[allow(dead_code)]
 // not every status code defined by the spec is here, but I don't care
 pub enum ResponseStatusCode {
@@ -70,6 +71,22 @@ impl Display for ResponseStatusCode {
             ResponseStatusCode::HttpVersionNotSupported => "Http Version Not Supported",
         };
 
-        Debug::fmt(string_value, f)
+        write!(f, "{}", string_value)
+    }
+}
+
+impl ResponseStatusCode {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes: Vec<u8> = vec![];
+
+        let mut code_string: Vec<u8> = (*self as u8).to_string().as_bytes_vec();
+        let mut status_string: Vec<u8> = self.to_string().as_bytes_vec();
+        println!("{}", self.to_string());
+
+        bytes.append(&mut code_string);
+        bytes.push(b' ');
+        bytes.append(&mut status_string);
+
+        bytes
     }
 }
