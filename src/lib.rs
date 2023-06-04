@@ -43,7 +43,7 @@ fn handle_connection(stream: &mut TcpStream) -> Result<()> {
     let mut response = if let Ok(request) = request {
         serve_content(&request)
     } else {
-        Response::error_response(ResponseStatusCode::BadRequest)
+        Response::error_response(None, ResponseStatusCode::BadRequest)
     };
 
     stream.write_all(&response.as_bytes())?;

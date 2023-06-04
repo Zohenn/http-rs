@@ -20,6 +20,6 @@ pub fn serve_content(request: &Request) -> Response {
             .body(content_bytes)
             .get()
     } else {
-        Response::error_response(ResponseStatusCode::NotFound)
+        Response::error_response(Some(request), ResponseStatusCode::NotFound)
     }
 }
