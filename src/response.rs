@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use crate::response_status_code::ResponseStatusCode;
 use crate::utils::StringUtils;
+use std::collections::HashMap;
 
 const SPACE: u8 = b' ';
 static CRLF: [u8; 2] = [b'\r', b'\n'];
@@ -54,6 +54,21 @@ impl Response {
     pub fn builder() -> ResponseBuilder {
         ResponseBuilder::new()
     }
+
+    pub fn error_response(status_code: ResponseStatusCode) -> Response {
+        ResponseBuilder::new()
+            .status_code(status_code)
+            .header("Content-Type", "text/html; charset=utf-8")
+            .body(
+                format!(
+                    "<html><body><h1 style='text-align: center'>{} {}</h1></body></html>",
+                    status_code as u16,
+                    status_code
+                )
+                .as_bytes_vec(),
+            )
+            .get()
+    }
 }
 
 #[derive(Debug)]
@@ -80,7 +95,9 @@ impl ResponseBuilder {
     }
 
     pub fn header(mut self, header_name: &str, header_value: &str) -> Self {
-        self.response.headers.insert(String::from(header_name), String::from(header_value));
+        self.response
+            .headers
+            .insert(String::from(header_name), String::from(header_value));
 
         self
     }

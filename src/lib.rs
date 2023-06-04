@@ -3,6 +3,7 @@ mod request_method;
 mod response;
 mod response_status_code;
 mod utils;
+mod content;
 
 use crate::request::parse_request;
 use crate::response::{Response};
@@ -10,6 +11,7 @@ use crate::response_status_code::ResponseStatusCode;
 use std::io::{Read, Result, Write};
 use std::net::{TcpListener, TcpStream};
 use std::ops::Add;
+use crate::content::{serve_content};
 use crate::utils::StringUtils;
 
 fn handle_connection(stream: &mut TcpStream) -> Result<()> {
@@ -36,20 +38,12 @@ fn handle_connection(stream: &mut TcpStream) -> Result<()> {
 
     let request = parse_request(request_bytes.as_slice());
 
-    println!("{request:#?}\n");
+    // println!("{request:#?}\n");
 
     let mut response = if let Ok(request) = request {
-        Response::builder()
-            .status_code(ResponseStatusCode::Ok)
-            .header("Content-Type", "text/html; charset=utf-8")
-            .body(String::from("<html><body><h1>Hello</h1></body></html>").as_bytes_vec())
-            .get()
+        serve_content(&request)
     } else {
-        Response::builder()
-            .status_code(ResponseStatusCode::BadRequest)
-            .header("Content-Type", "text/html; charset=utf-8")
-            .body(String::from("<html><body><h1>400 Bad Request</h1></body></html>").as_bytes_vec())
-            .get()
+        Response::error_response(ResponseStatusCode::BadRequest)
     };
 
     stream.write_all(&response.as_bytes())?;
