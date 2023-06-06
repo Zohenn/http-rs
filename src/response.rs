@@ -1,4 +1,3 @@
-use crate::request::Request;
 use crate::response_status_code::ResponseStatusCode;
 use crate::utils::StringUtils;
 use std::collections::HashMap;
@@ -54,33 +53,6 @@ impl Response {
 
     pub fn builder() -> ResponseBuilder {
         ResponseBuilder::new()
-    }
-
-    pub fn error_response(request: Option<&Request>, status_code: ResponseStatusCode) -> Response {
-        let mut response_builder = ResponseBuilder::new().status_code(status_code);
-
-        let accepts_html = {
-            if let Some(request) = request {
-                let accept_header = request.headers.get("Accept");
-                accept_header.is_some() && accept_header.unwrap().contains("text/html")
-            } else {
-                false
-            }
-        };
-
-        if accepts_html {
-            response_builder = response_builder
-                .header("Content-Type", "text/html; charset=utf-8")
-                .body(
-                    format!(
-                        "<html><body><h1 style='text-align: center'>{} {}</h1></body></html>",
-                        status_code as u16, status_code
-                    )
-                    .as_bytes_vec(),
-                )
-        }
-
-        response_builder.get()
     }
 }
 

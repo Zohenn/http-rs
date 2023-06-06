@@ -28,7 +28,7 @@ impl fmt::Debug for Request {
 #[derive(Debug, Clone)]
 pub struct RequestParseError;
 
-fn take_until_crlf<'a>(iterator: &mut dyn Iterator<Item = &'a u8>) -> Result<Vec<u8>>
+fn take_until_crlf<'a>(iterator: &mut impl Iterator<Item = &'a u8>) -> Result<Vec<u8>>
 where
     u8: Copy,
 {
