@@ -65,44 +65,40 @@ impl ServerConfig {
 
 pub struct Server {
     config: ServerConfig,
-    tls_connection: Option<rustls::ServerConnection>,
+    https_config: Option<Arc<rustls::ServerConfig>>,
 }
 
 impl Server {
     pub fn new(config: Option<ServerConfig>) -> Self {
         Server {
             config: config.unwrap_or(ServerConfig::default()),
-            tls_connection: None,
+            https_config: None,
         }
     }
 
-    fn init_https(&self) -> Option<Arc<rustls::ServerConfig>> {
+    fn init_https(&mut self) {
         if !self.config.https {
-            return None;
+            return;
         }
 
         let certs = self.config.load_certs();
         let key = self.config.load_key();
 
         if certs.is_empty() || key.is_none() {
-            return None;
+            return;
         }
 
-        Some(Arc::new(
+        self.https_config = Some(Arc::new(
             rustls::ServerConfig::builder()
                 .with_safe_defaults()
                 .with_no_client_auth()
                 .with_single_cert(certs, key.unwrap())
                 .unwrap(),
-        ))
+        ));
     }
 
     pub fn run(&mut self) -> Result<()> {
-        let https_server_config = self.init_https();
-
-        if https_server_config.is_some() {
-            self.tls_connection = Some(rustls::ServerConnection::new(https_server_config.unwrap()).unwrap());
-        }
+        self.init_https();
 
         let listener = TcpListener::bind(format!("127.0.0.1:{}", self.config.port))?;
 
@@ -118,31 +114,37 @@ impl Server {
         let mut stream_buf: [u8; 255] = [0; 255];
         let mut request_bytes: Vec<u8> = Vec::new();
 
-        let https_server_config = self.init_https();
+        let mut tls_connection: Option<rustls::ServerConnection> = None;
 
-        if https_server_config.is_some() {
-            self.tls_connection = Some(rustls::ServerConnection::new(https_server_config.unwrap()).unwrap());
+        if let Some(https_config) = &self.https_config {
+            tls_connection =
+                Some(rustls::ServerConnection::new(https_config.clone()).unwrap());
         }
 
-        if let Some(tls_connection) = &mut self.tls_connection {
+        if let Some(tls_connection) = &mut tls_connection {
             while tls_connection.is_handshaking() {
                 tls_connection.read_tls(stream)?;
                 match tls_connection.process_new_packets() {
                     Err(err) => {
                         println!("{:?}", err);
-                        return Ok(())
-                    },
+                        return Ok(());
+                    }
                     Ok(state) => {
                         println!("{state:?}");
                         match tls_connection.reader().read_to_end(&mut request_bytes) {
-                            Ok(n) => {},
-                            Err(err) => println!("{err:?}")
+                            Ok(n) => {}
+                            Err(err) => println!("{err:?}"),
                         }
                         println!("{:?}", std::str::from_utf8(&request_bytes).unwrap());
-                    },
+                    }
                 }
                 tls_connection.write_tls(stream)?;
-                println!("{} {} {}", tls_connection.is_handshaking(), tls_connection.wants_read(), tls_connection.wants_write());
+                println!(
+                    "{} {} {}",
+                    tls_connection.is_handshaking(),
+                    tls_connection.wants_read(),
+                    tls_connection.wants_write()
+                );
             }
             tls_connection.read_tls(stream)?;
             match tls_connection.process_new_packets() {
@@ -150,21 +152,26 @@ impl Server {
                     println!("{:?}", err);
                     tls_connection.send_close_notify();
                     return Ok(());
-                },
+                }
                 Ok(state) => {
                     // let mut buf: Vec<u8> = vec![];
                     println!("{state:?}");
                     match tls_connection.reader().read_to_end(&mut request_bytes) {
-                        Ok(n) => {},
-                        Err(err) => println!("{err:?}")
+                        Ok(n) => {}
+                        Err(err) => println!("{err:?}"),
                     }
                     println!("{:?}", std::str::from_utf8(&request_bytes).unwrap());
                     if state.tls_bytes_to_write() > 0 {
                         tls_connection.write_tls(stream)?;
                     }
-                },
+                }
             }
-            println!("{} {} {}", tls_connection.is_handshaking(), tls_connection.wants_read(), tls_connection.wants_write());
+            println!(
+                "{} {} {}",
+                tls_connection.is_handshaking(),
+                tls_connection.wants_read(),
+                tls_connection.wants_write()
+            );
         } else {
             loop {
                 let read_result = stream.read(stream_buf.as_mut_slice());
@@ -194,8 +201,7 @@ impl Server {
             self.error_response(None, ResponseStatusCode::BadRequest)
         };
 
-        if self.tls_connection.is_some() {
-            let conn = self.tls_connection.as_mut().unwrap();
+        if let Some(conn) = &mut tls_connection {
             conn.writer().write_all(&response.as_bytes()).unwrap();
             conn.write_tls(stream).unwrap();
             conn.send_close_notify();
