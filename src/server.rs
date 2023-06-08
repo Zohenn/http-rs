@@ -9,6 +9,7 @@ use std::net::{TcpListener, TcpStream};
 use std::ops::Add;
 use std::path::Path;
 use std::sync::Arc;
+use crate::connection::Connection;
 
 pub struct ServerConfig {
     pub root: String,
@@ -110,72 +111,14 @@ impl Server {
     }
 
     fn handle_connection(&mut self, stream: &mut TcpStream) -> Result<()> {
-        // let mut raw_request = String::new();
-        let mut stream_buf: [u8; 255] = [0; 255];
-        let mut request_bytes: Vec<u8> = Vec::new();
-
-        let mut tls_connection: Option<rustls::ServerConnection> = None;
-
-        if let Some(https_config) = &self.https_config {
-            tls_connection =
-                Some(rustls::ServerConnection::new(https_config.clone()).unwrap());
-        }
-
-        if let Some(tls_connection) = &mut tls_connection {
-            while tls_connection.is_handshaking() {
-                tls_connection.read_tls(stream)?;
-                match tls_connection.process_new_packets() {
-                    Err(err) => {
-                        println!("Hanshake error: {err:?}");
-                        tls_connection.write_tls(stream).unwrap();
-                        return Ok(());
-                    }
-                    Ok(state) => {
-                        println!("Handshaking state: {state:?}");
-                    }
-                }
-                tls_connection.write_tls(stream)?;
-            }
-
-            tls_connection.read_tls(stream)?;
-            match tls_connection.process_new_packets() {
-                Err(err) => {
-                    println!("Plaintext read error: {err:?}");
-                    tls_connection.write_tls(stream).unwrap();
-                    return Ok(());
-                }
-                Ok(state) => {
-                    let mut buf = vec![];
-                    buf.resize(state.plaintext_bytes_to_read(), 0u8);
-                    match tls_connection.reader().read(&mut buf) {
-                        Ok(n) => println!("ok bytes {n}"),
-                        Err(err) => println!("{err:?}"),
-                    }
-                    request_bytes.append(&mut buf);
-                }
-            }
-        } else {
-            loop {
-                let read_result = stream.read(stream_buf.as_mut_slice());
-                match read_result {
-                    Ok(n) => {
-                        request_bytes.extend_from_slice(stream_buf.take(n as u64).into_inner());
-                        // raw_request = raw_request.add(std::str::from_utf8(&stream_buf).unwrap());
-                        if n < stream_buf.len() {
-                            break;
-                        }
-                        stream_buf.fill(0);
-                    }
-                    Err(e) => panic!("{}", e),
-                }
-            }
-        }
-
-        // println!("Received message:\n{raw_request}\n");
+        let mut connection = Connection::new(stream, self.https_config.clone());
+        let request_bytes = match connection.read() {
+            Ok(None) => return Ok(()),
+            Ok(Some(bytes)) => bytes,
+            Err(err) => return Err(err),
+        };
 
         let request = parse_request(request_bytes.as_slice());
-
-        // println!("{request:#?}\n");
 
         let mut response = if let Ok(request) = request {
             self.serve_content(&request)
@@ -183,13 +126,7 @@ impl Server {
             self.error_response(None, ResponseStatusCode::BadRequest)
         };
 
-        if let Some(conn) = &mut tls_connection {
-            conn.writer().write_all(&response.as_bytes()).unwrap();
-            conn.write_tls(stream).unwrap();
-            conn.send_close_notify();
-        } else {
-            stream.write_all(&response.as_bytes())?;
-        }
+        connection.write(&response.as_bytes())?;
 
         Ok(())
     }
