@@ -1,22 +1,22 @@
 #[derive(Debug)]
 pub enum RequestMethod {
-    GET,
-    HEAD,
-    POST,
-    PUT,
-    PATCH,
-    DELETE,
+    Get,
+    Head,
+    Post,
+    Put,
+    Patch,
+    Delete,
 }
 
 impl RequestMethod {
     pub fn from_str(value: &str) -> Option<Self> {
         match value {
-            "GET" => Some(RequestMethod::GET),
-            "HEAD" => Some(RequestMethod::HEAD),
-            "POST" => Some(RequestMethod::POST),
-            "PUT" => Some(RequestMethod::PUT),
-            "PATCH" => Some(RequestMethod::PATCH),
-            "DELETE" => Some(RequestMethod::DELETE),
+            "GET" => Some(RequestMethod::Get),
+            "HEAD" => Some(RequestMethod::Head),
+            "POST" => Some(RequestMethod::Post),
+            "PUT" => Some(RequestMethod::Put),
+            "PATCH" => Some(RequestMethod::Patch),
+            "DELETE" => Some(RequestMethod::Delete),
             _ => None,
         }
     }

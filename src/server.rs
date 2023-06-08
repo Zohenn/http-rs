@@ -5,7 +5,6 @@ use crate::utils::StringUtils;
 use std::fs;
 use std::io::Result;
 use std::net::{TcpListener, TcpStream};
-use std::ops::Add;
 use std::path::Path;
 use std::sync::Arc;
 use crate::connection::Connection;
@@ -79,7 +78,7 @@ impl Server {
     }
 
     fn get_content(&self, request: &Request) -> Result<Vec<u8>> {
-        let path = Path::new(&self.config.root).join(request.url.strip_prefix("/").unwrap());
+        let path = Path::new(&self.config.root).join(request.url.strip_prefix('/').unwrap());
 
         fs::read(path)
     }

@@ -10,7 +10,7 @@ pub trait StringUtils {
 
 impl StringUtils for String {
     fn as_bytes_vec(&self) -> Vec<u8> {
-        self.as_bytes().iter().copied().collect()
+        self.as_bytes().to_vec()
     }
 
     fn try_from_vec(value: Vec<u8>) -> Result<Self, Utf8Error> {

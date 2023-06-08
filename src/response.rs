@@ -13,9 +13,10 @@ pub struct Response {
     body: Vec<u8>,
 }
 
+#[allow(dead_code)]
 impl Response {
     pub fn version(&self) -> &str {
-        &self.version.as_str()
+        self.version.as_str()
     }
 
     pub fn status_code(&self) -> &ResponseStatusCode {

@@ -10,8 +10,8 @@ pub struct ServerConfig {
     pub key_path: Option<String>,
 }
 
-impl ServerConfig {
-    pub(crate) fn default() -> Self {
+impl Default for ServerConfig {
+    fn default() -> Self {
         ServerConfig {
             root: String::from("web"),
             port: 80,
@@ -20,7 +20,9 @@ impl ServerConfig {
             key_path: None,
         }
     }
+}
 
+impl ServerConfig {
     pub(crate) fn load_certs(&self) -> Vec<rustls::Certificate> {
         if let Some(cert_path) = &self.cert_path {
             let cert_file = fs::File::open(cert_path).expect("Could not open certificate file");
@@ -59,6 +61,7 @@ pub struct ServerConfigBuilder {
     server_config: ServerConfig,
 }
 
+#[allow(clippy::new_without_default)]
 impl ServerConfigBuilder {
     pub fn new() -> Self {
         ServerConfigBuilder {

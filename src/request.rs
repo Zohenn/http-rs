@@ -68,10 +68,9 @@ fn parse_request_line<'a>(
     let version_bytes = take_until_crlf(iterator)?;
     let version = String::from_vec(version_bytes);
 
-    if method.is_some() && !url.is_empty() {
-        Ok((method.unwrap(), url, version))
-    } else {
-        Err(RequestParseError)
+    match method {
+        Some(method) if !url.is_empty() => Ok((method, url, version)),
+        _ => Err(RequestParseError),
     }
 }
 
@@ -87,7 +86,7 @@ fn parse_headers<'a>(
             peekable_iterator.next();
             let last_byte = peekable_iterator.next();
 
-            if *last_byte.unwrap_or(&&0u8) == b'\n' {
+            if *last_byte.unwrap_or(&0u8) == b'\n' {
                 return Ok(headers);
             }
 
@@ -115,6 +114,6 @@ pub fn parse_request(bytes: &[u8]) -> Result<Request> {
         url,
         version,
         headers,
-        body: bytes_iter.map(|byte| *byte).collect(),
+        body: bytes_iter.copied().collect(),
     })
 }
