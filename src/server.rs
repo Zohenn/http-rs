@@ -2,67 +2,14 @@ use crate::request::{parse_request, Request};
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
 use crate::utils::StringUtils;
-use rustls_pemfile::Item;
 use std::fs;
-use std::io::{BufReader, Error, Read, Result, Write};
+use std::io::Result;
 use std::net::{TcpListener, TcpStream};
 use std::ops::Add;
 use std::path::Path;
 use std::sync::Arc;
 use crate::connection::Connection;
-
-pub struct ServerConfig {
-    pub root: String,
-    pub port: u32,
-    pub https: bool,
-    pub cert_path: Option<String>,
-    pub key_path: Option<String>,
-}
-
-impl ServerConfig {
-    pub fn default() -> Self {
-        ServerConfig {
-            root: String::from("web"),
-            port: 80,
-            https: false,
-            cert_path: None,
-            key_path: None,
-        }
-    }
-
-    fn load_certs(&self) -> Vec<rustls::Certificate> {
-        if let Some(cert_path) = &self.cert_path {
-            let cert_file = fs::File::open(cert_path).expect("Could not open certificate file");
-            let mut reader = BufReader::new(cert_file);
-            rustls_pemfile::certs(&mut reader)
-                .unwrap()
-                .iter()
-                .map(|v| rustls::Certificate(v.clone()))
-                .collect()
-        } else {
-            vec![]
-        }
-    }
-
-    fn load_key(&self) -> Option<rustls::PrivateKey> {
-        if let Some(key_path) = &self.key_path {
-            let key_file = fs::File::open(key_path).expect("Could not open key file");
-            let mut reader = BufReader::new(key_file);
-            if let Ok(Some(item)) = rustls_pemfile::read_one(&mut reader) {
-                match item {
-                    Item::RSAKey(key) | Item::PKCS8Key(key) | Item::ECKey(key) => {
-                        Some(rustls::PrivateKey(key))
-                    }
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-}
+use crate::server_config::ServerConfig;
 
 pub struct Server {
     config: ServerConfig,
