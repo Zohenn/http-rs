@@ -7,7 +7,7 @@ A very noob attempt at writing code in Rust.
 - [ ] custom builder-pattern macro
 - [ ] keep-alive
 - [ ] binary compilation target that serves static files only and reads config from config file
-- [ ] multithreading
+- [x] multithreading
 - [ ] allowing HTTPS and non-HTTPS traffic simultaneously
 
 ### mightdo

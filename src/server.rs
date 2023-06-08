@@ -10,18 +10,19 @@ use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::Arc;
 
-type RequestListener = dyn Fn(&Request) -> Option<Response>;
+type RequestListener = dyn Fn(&Request) -> Option<Response> + Send + Sync;
 
+#[derive(Clone)]
 pub struct Server {
-    config: ServerConfig,
+    config: Arc<ServerConfig>,
     https_config: Option<Arc<rustls::ServerConfig>>,
-    listener: Option<Box<RequestListener>>,
+    listener: Option<Arc<RequestListener>>,
 }
 
 impl Server {
     pub fn new(config: Option<ServerConfig>) -> Self {
         Server {
-            config: config.unwrap_or(ServerConfig::default()),
+            config: Arc::new(config.unwrap_or(ServerConfig::default())),
             https_config: None,
             listener: None,
         }
@@ -48,8 +49,8 @@ impl Server {
         ));
     }
 
-    pub fn listener(mut self, listener: impl Fn(&Request) -> Option<Response> + 'static) -> Self {
-        self.listener = Some(Box::new(listener));
+    pub fn listener(mut self, listener: impl Fn(&Request) -> Option<Response> + 'static + Send + Sync) -> Self {
+        self.listener = Some(Arc::new(listener));
 
         self
     }
@@ -60,7 +61,10 @@ impl Server {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", self.config.port))?;
 
         for stream in listener.incoming() {
-            self.handle_connection(&mut stream?)?;
+            let mut cloned_server = self.clone();
+            std::thread::spawn(move || {
+                cloned_server.handle_connection(&mut stream.unwrap()).unwrap();
+            });
         }
 
         Ok(())
