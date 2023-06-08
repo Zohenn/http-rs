@@ -127,14 +127,18 @@ impl Server {
                 match tls_connection.process_new_packets() {
                     Err(err) => {
                         println!("{:?}", err);
+                        tls_connection.send_close_notify();
                         return Ok(());
                     }
                     Ok(state) => {
                         println!("{state:?}");
-                        match tls_connection.reader().read_to_end(&mut request_bytes) {
-                            Ok(n) => {}
+                        let mut buf = vec![];
+                        buf.resize(state.plaintext_bytes_to_read(), 0u8);
+                        match tls_connection.reader().read(&mut buf) {
+                            Ok(n) => println!("ok bytes {n}"),
                             Err(err) => println!("{err:?}"),
                         }
+                        request_bytes.append(&mut buf);
                         println!("{:?}", std::str::from_utf8(&request_bytes).unwrap());
                     }
                 }
@@ -156,10 +160,13 @@ impl Server {
                 Ok(state) => {
                     // let mut buf: Vec<u8> = vec![];
                     println!("{state:?}");
-                    match tls_connection.reader().read_to_end(&mut request_bytes) {
-                        Ok(n) => {}
+                    let mut buf = vec![];
+                    buf.resize(state.plaintext_bytes_to_read(), 0u8);
+                    match tls_connection.reader().read(&mut buf) {
+                        Ok(n) => println!("ok bytes2 {n}"),
                         Err(err) => println!("{err:?}"),
                     }
+                    request_bytes.append(&mut buf);
                     println!("{:?}", std::str::from_utf8(&request_bytes).unwrap());
                     if state.tls_bytes_to_write() > 0 {
                         tls_connection.write_tls(stream)?;
