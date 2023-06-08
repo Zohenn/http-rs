@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 #[derive(Debug)]
 pub enum RequestMethod {
     Get,
@@ -8,16 +10,18 @@ pub enum RequestMethod {
     Delete,
 }
 
-impl RequestMethod {
-    pub fn from_str(value: &str) -> Option<Self> {
+impl FromStr for RequestMethod {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, ()> {
         match value {
-            "GET" => Some(RequestMethod::Get),
-            "HEAD" => Some(RequestMethod::Head),
-            "POST" => Some(RequestMethod::Post),
-            "PUT" => Some(RequestMethod::Put),
-            "PATCH" => Some(RequestMethod::Patch),
-            "DELETE" => Some(RequestMethod::Delete),
-            _ => None,
+            "GET" => Ok(RequestMethod::Get),
+            "HEAD" => Ok(RequestMethod::Head),
+            "POST" => Ok(RequestMethod::Post),
+            "PUT" => Ok(RequestMethod::Put),
+            "PATCH" => Ok(RequestMethod::Patch),
+            "DELETE" => Ok(RequestMethod::Delete),
+            _ => Err(()),
         }
     }
 }

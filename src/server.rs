@@ -1,18 +1,21 @@
+use crate::connection::Connection;
 use crate::request::{parse_request, Request};
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
+use crate::server_config::ServerConfig;
 use crate::utils::StringUtils;
 use std::fs;
 use std::io::Result;
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::Arc;
-use crate::connection::Connection;
-use crate::server_config::ServerConfig;
+
+type RequestListener = dyn Fn(&Request) -> Option<Response>;
 
 pub struct Server {
     config: ServerConfig,
     https_config: Option<Arc<rustls::ServerConfig>>,
+    listener: Option<Box<RequestListener>>,
 }
 
 impl Server {
@@ -20,6 +23,7 @@ impl Server {
         Server {
             config: config.unwrap_or(ServerConfig::default()),
             https_config: None,
+            listener: None,
         }
     }
 
@@ -42,6 +46,12 @@ impl Server {
                 .with_single_cert(certs, key.unwrap())
                 .unwrap(),
         ));
+    }
+
+    pub fn listener(mut self, listener: impl Fn(&Request) -> Option<Response> + 'static) -> Self {
+        self.listener = Some(Box::new(listener));
+
+        self
     }
 
     pub fn run(&mut self) -> Result<()> {
@@ -87,14 +97,20 @@ impl Server {
         let content = self.get_content(request);
 
         if let Ok(content_bytes) = content {
-            Response::builder()
+            return Response::builder()
                 .status_code(ResponseStatusCode::Ok)
                 .header("Content-Type", "text/html; charset=utf-8")
                 .body(content_bytes)
-                .get()
-        } else {
-            self.error_response(Some(request), ResponseStatusCode::NotFound)
+                .get();
         }
+
+        if let Some(listener) = &self.listener {
+            if let Some(response) = listener(request) {
+                return response;
+            }
+        }
+
+        self.error_response(Some(request), ResponseStatusCode::NotFound)
     }
 
     fn error_response(

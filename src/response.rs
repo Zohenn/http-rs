@@ -63,6 +63,7 @@ pub struct ResponseBuilder {
     response: Response,
 }
 
+#[allow(clippy::new_without_default)]
 impl ResponseBuilder {
     pub fn new() -> Self {
         ResponseBuilder {

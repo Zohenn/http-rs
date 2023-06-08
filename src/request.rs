@@ -1,6 +1,7 @@
 use crate::request_method::RequestMethod;
 use std::collections::HashMap;
 use std::fmt;
+use std::str::FromStr;
 use crate::utils::{StringUtils, IteratorUtils};
 
 type Result<T> = std::result::Result<T, RequestParseError>;
@@ -69,7 +70,7 @@ fn parse_request_line<'a>(
     let version = String::from_vec(version_bytes);
 
     match method {
-        Some(method) if !url.is_empty() => Ok((method, url, version)),
+        Ok(method) if !url.is_empty() => Ok((method, url, version)),
         _ => Err(RequestParseError),
     }
 }
