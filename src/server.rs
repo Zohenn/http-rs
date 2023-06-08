@@ -3,37 +3,51 @@ use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
 use crate::utils::StringUtils;
 use std::fs;
-use std::io::{Read, Result, Write};
+use std::io::Result;
 use std::net::{TcpListener, TcpStream};
 use std::ops::Add;
 use std::path::Path;
-
-pub struct ServerConfig {
-    pub root: String,
-    pub port: u32,
-}
-
-impl ServerConfig {
-    pub fn default() -> Self {
-        ServerConfig {
-            root: String::from("web"),
-            port: 80,
-        }
-    }
-}
+use std::sync::Arc;
+use crate::connection::Connection;
+use crate::server_config::ServerConfig;
 
 pub struct Server {
     config: ServerConfig,
+    https_config: Option<Arc<rustls::ServerConfig>>,
 }
 
 impl Server {
     pub fn new(config: Option<ServerConfig>) -> Self {
         Server {
             config: config.unwrap_or(ServerConfig::default()),
+            https_config: None,
         }
     }
 
-    pub fn run(&self) -> Result<()> {
+    fn init_https(&mut self) {
+        if !self.config.https {
+            return;
+        }
+
+        let certs = self.config.load_certs();
+        let key = self.config.load_key();
+
+        if certs.is_empty() || key.is_none() {
+            return;
+        }
+
+        self.https_config = Some(Arc::new(
+            rustls::ServerConfig::builder()
+                .with_safe_defaults()
+                .with_no_client_auth()
+                .with_single_cert(certs, key.unwrap())
+                .unwrap(),
+        ));
+    }
+
+    pub fn run(&mut self) -> Result<()> {
+        self.init_https();
+
         let listener = TcpListener::bind(format!("127.0.0.1:{}", self.config.port))?;
 
         for stream in listener.incoming() {
@@ -43,31 +57,15 @@ impl Server {
         Ok(())
     }
 
-    fn handle_connection(&self, stream: &mut TcpStream) -> Result<()> {
-        // let mut raw_request = String::new();
-        let mut stream_buf: [u8; 255] = [0; 255];
-        let mut request_bytes: Vec<u8> = Vec::new();
-
-        loop {
-            let read_result = stream.read(stream_buf.as_mut_slice());
-            match read_result {
-                Ok(n) => {
-                    request_bytes.extend_from_slice(stream_buf.take(n as u64).into_inner());
-                    // raw_request = raw_request.add(std::str::from_utf8(&stream_buf).unwrap());
-                    if n < stream_buf.len() {
-                        break;
-                    }
-                    stream_buf.fill(0);
-                }
-                Err(e) => panic!("{}", e),
-            }
-        }
-
-        // println!("Received message:\n{raw_request}\n");
+    fn handle_connection(&mut self, stream: &mut TcpStream) -> Result<()> {
+        let mut connection = Connection::new(stream, self.https_config.clone());
+        let request_bytes = match connection.read() {
+            Ok(None) => return Ok(()),
+            Ok(Some(bytes)) => bytes,
+            Err(err) => return Err(err),
+        };
 
         let request = parse_request(request_bytes.as_slice());
-
-        // println!("{request:#?}\n");
 
         let mut response = if let Ok(request) = request {
             self.serve_content(&request)
@@ -75,7 +73,7 @@ impl Server {
             self.error_response(None, ResponseStatusCode::BadRequest)
         };
 
-        stream.write_all(&response.as_bytes())?;
+        connection.write(&response.as_bytes())?;
 
         Ok(())
     }

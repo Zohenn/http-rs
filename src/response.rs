@@ -40,6 +40,7 @@ impl Response {
 
         for (header_name, header_value) in self.headers.iter() {
             bytes.append(&mut header_name.as_bytes_vec());
+            bytes.push(b':');
             bytes.push(SPACE);
             bytes.append(&mut header_value.as_bytes_vec());
             bytes.extend_from_slice(&CRLF);
