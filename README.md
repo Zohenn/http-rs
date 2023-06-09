@@ -4,6 +4,7 @@ A very noob attempt at writing code in Rust.
 ### todo
 - [x] HTTPS support
 - [x] request listener, similar to the one present in native http module in Node.js
+- [ ] kindly do not return HTTP 400 on TCP FIN message
 - [ ] custom builder-pattern macro
 - [ ] keep-alive
 - [ ] binary compilation target that serves static files only and reads config from config file
