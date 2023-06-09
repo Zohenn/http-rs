@@ -64,6 +64,7 @@ impl Server {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", self.config.port))?;
 
         for stream in listener.incoming() {
+            println!("New connection");
             let mut cloned_server = self.clone();
             std::thread::spawn(move || {
                 match cloned_server.handle_connection(&mut stream.unwrap()) {
@@ -77,15 +78,16 @@ impl Server {
     }
 
     fn handle_connection(&mut self, stream: &mut TcpStream) -> Result<()> {
-        let persistent = match self.config.keep_alive {
-            KeepAliveConfig::On { timeout, .. } => {
+        let (persistent, max_requests) = match self.config.keep_alive {
+            KeepAliveConfig::On { timeout, max_requests, .. } => {
                 stream.set_read_timeout(Some(std::time::Duration::from_secs(timeout as u64)))?;
-                true
+                (true, max_requests)
             }
-            _ => false,
+            _ => (false, 0),
         };
 
         let mut connection = Connection::new(stream, self.https_config.clone(), persistent);
+        let mut served_requests_count = 0u8;
 
         loop {
             let request_bytes = match connection.read() {
@@ -111,7 +113,9 @@ impl Server {
 
             connection.write(&response.as_bytes())?;
 
-            if !persistent {
+            served_requests_count += 1;
+
+            if !persistent || served_requests_count >= max_requests {
                 return Ok(());
             }
         }
