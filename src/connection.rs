@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
 
@@ -71,8 +71,8 @@ impl<'a> Connection<'a> {
                         }
                         stream_buf.fill(0);
                     }
-                    // todo: change this panic
-                    Err(e) => panic!("{}", e),
+                    Err(e) if e.kind() == ErrorKind::ConnectionReset => return Ok(None),
+                    Err(e) => return Err(e),
                 }
             }
         }

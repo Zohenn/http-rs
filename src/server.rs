@@ -72,23 +72,24 @@ impl Server {
 
     fn handle_connection(&mut self, stream: &mut TcpStream) -> Result<()> {
         let mut connection = Connection::new(stream, self.https_config.clone());
-        let request_bytes = match connection.read() {
-            Ok(None) => return Ok(()),
-            Ok(Some(bytes)) => bytes,
-            Err(err) => return Err(err),
-        };
 
-        let request = parse_request(request_bytes.as_slice());
+        loop {
+            let request_bytes = match connection.read() {
+                Ok(None) => return Ok(()),
+                Ok(Some(bytes)) => bytes,
+                Err(err) => return Err(err),
+            };
 
-        let mut response = if let Ok(request) = request {
-            self.serve_content(&request)
-        } else {
-            self.error_response(None, ResponseStatusCode::BadRequest)
-        };
+            let request = parse_request(request_bytes.as_slice());
 
-        connection.write(&response.as_bytes())?;
+            let mut response = if let Ok(request) = request {
+                self.serve_content(&request)
+            } else {
+                self.error_response(None, ResponseStatusCode::BadRequest)
+            };
 
-        Ok(())
+            connection.write(&response.as_bytes())?;
+        }
     }
 
     fn get_content(&self, request: &Request) -> Result<Vec<u8>> {
@@ -104,6 +105,7 @@ impl Server {
             return Response::builder()
                 .status_code(ResponseStatusCode::Ok)
                 .header("Content-Type", "text/html; charset=utf-8")
+                .header("Content-Length", &content_bytes.len().to_string())
                 .body(content_bytes)
                 .get();
         }
