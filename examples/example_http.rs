@@ -1,11 +1,18 @@
-use http_rs::server::Server;
-use http_rs::server_config::ServerConfigBuilder;
-use std::io::Result;
 use http_rs::response::Response;
 use http_rs::response_status_code::ResponseStatusCode;
+use http_rs::server::Server;
+use http_rs::server_config::{KeepAliveConfig, ServerConfigBuilder};
+use std::io::Result;
 
 fn main() -> Result<()> {
-    let config = ServerConfigBuilder::new().root("root").get();
+    let config = ServerConfigBuilder::new()
+        .root("root")
+        .keep_alive(KeepAliveConfig::On {
+            timeout: 10,
+            max_requests: 4,
+            include_header: true,
+        })
+        .get();
 
     Server::new(Some(config))
         .listener(|request| {

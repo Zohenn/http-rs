@@ -2,7 +2,7 @@ use crate::connection::Connection;
 use crate::request::{parse_request, Request};
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
-use crate::server_config::ServerConfig;
+use crate::server_config::{KeepAliveConfig, ServerConfig};
 use crate::utils::StringUtils;
 use std::fs;
 use std::io::Result;
@@ -49,7 +49,10 @@ impl Server {
         ));
     }
 
-    pub fn listener(mut self, listener: impl Fn(&Request) -> Option<Response> + 'static + Send + Sync) -> Self {
+    pub fn listener(
+        mut self,
+        listener: impl Fn(&Request) -> Option<Response> + Send + Sync + 'static,
+    ) -> Self {
         self.listener = Some(Arc::new(listener));
 
         self
@@ -61,9 +64,13 @@ impl Server {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", self.config.port))?;
 
         for stream in listener.incoming() {
+            println!("New connection");
             let mut cloned_server = self.clone();
             std::thread::spawn(move || {
-                cloned_server.handle_connection(&mut stream.unwrap()).unwrap();
+                match cloned_server.handle_connection(&mut stream.unwrap()) {
+                    Ok(_) => println!("Connection closed"),
+                    Err(err) => println!("Connection error: {err:?}"),
+                }
             });
         }
 
@@ -71,24 +78,47 @@ impl Server {
     }
 
     fn handle_connection(&mut self, stream: &mut TcpStream) -> Result<()> {
-        let mut connection = Connection::new(stream, self.https_config.clone());
-        let request_bytes = match connection.read() {
-            Ok(None) => return Ok(()),
-            Ok(Some(bytes)) => bytes,
-            Err(err) => return Err(err),
+        let (persistent, max_requests) = match self.config.keep_alive {
+            KeepAliveConfig::On { timeout, max_requests, .. } => {
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(timeout as u64)))?;
+                (true, max_requests)
+            }
+            _ => (false, 0),
         };
 
-        let request = parse_request(request_bytes.as_slice());
+        let mut connection = Connection::new(stream, self.https_config.clone(), persistent);
+        let mut served_requests_count = 0u8;
 
-        let mut response = if let Ok(request) = request {
-            self.serve_content(&request)
-        } else {
-            self.error_response(None, ResponseStatusCode::BadRequest)
-        };
+        loop {
+            let request_bytes = match connection.read() {
+                Ok(None) => {
+                    println!("Got none bytes");
+                    return Ok(());
+                }
+                Ok(Some(bytes)) if bytes.is_empty() => {
+                    println!("Got empty message (TCP FIN, probably)");
+                    return Ok(());
+                }
+                Ok(Some(bytes)) => bytes,
+                Err(err) => return Err(err),
+            };
 
-        connection.write(&response.as_bytes())?;
+            let request = parse_request(request_bytes.as_slice());
 
-        Ok(())
+            let mut response = if let Ok(request) = request {
+                self.serve_content(&request)
+            } else {
+                self.error_response(None, ResponseStatusCode::BadRequest)
+            };
+
+            connection.write(&response.as_bytes())?;
+
+            served_requests_count += 1;
+
+            if !persistent || served_requests_count >= max_requests {
+                return Ok(());
+            }
+        }
     }
 
     fn get_content(&self, request: &Request) -> Result<Vec<u8>> {
@@ -101,11 +131,24 @@ impl Server {
         let content = self.get_content(request);
 
         if let Ok(content_bytes) = content {
-            return Response::builder()
+            let mut builder = Response::builder()
                 .status_code(ResponseStatusCode::Ok)
                 .header("Content-Type", "text/html; charset=utf-8")
-                .body(content_bytes)
-                .get();
+                .header("Content-Length", &content_bytes.len().to_string());
+
+            if let KeepAliveConfig::On {
+                timeout,
+                max_requests,
+                ..
+            } = self.config.keep_alive
+            {
+                builder = builder.header(
+                    "Keep-Alive",
+                    &format!("timeout={timeout}, max={max_requests}"),
+                );
+            }
+
+            return builder.body(content_bytes).get();
         }
 
         if let Some(listener) = &self.listener {
