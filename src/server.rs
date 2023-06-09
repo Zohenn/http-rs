@@ -63,7 +63,10 @@ impl Server {
         for stream in listener.incoming() {
             let mut cloned_server = self.clone();
             std::thread::spawn(move || {
-                cloned_server.handle_connection(&mut stream.unwrap()).unwrap();
+                match cloned_server.handle_connection(&mut stream.unwrap()) {
+                    Ok(_) => println!("Connection closed"),
+                    Err(err) => println!("Connection error: {err:?}"),
+                }
             });
         }
 
@@ -75,7 +78,14 @@ impl Server {
 
         loop {
             let request_bytes = match connection.read() {
-                Ok(None) => return Ok(()),
+                Ok(None) => {
+                    println!("Got none bytes");
+                    return Ok(())
+                },
+                Ok(Some(bytes)) if bytes.is_empty() => {
+                    println!("Got empty message (TCP FIN, probably)");
+                    return Ok(())
+                },
                 Ok(Some(bytes)) => bytes,
                 Err(err) => return Err(err),
             };
