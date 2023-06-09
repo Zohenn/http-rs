@@ -1,6 +1,22 @@
+use rustls_pemfile::Item;
 use std::fs;
 use std::io::BufReader;
-use rustls_pemfile::Item;
+
+#[derive(PartialEq)]
+pub enum KeepAliveConfig {
+    Off,
+    On { max_requests: u8, timeout: u8, include_header: bool },
+}
+
+impl Default for KeepAliveConfig {
+    fn default() -> Self {
+        KeepAliveConfig::On {
+            max_requests: 100,
+            timeout: 10,
+            include_header: true,
+        }
+    }
+}
 
 pub struct ServerConfig {
     pub root: String,
@@ -8,6 +24,7 @@ pub struct ServerConfig {
     pub https: bool,
     pub cert_path: Option<String>,
     pub key_path: Option<String>,
+    pub keep_alive: KeepAliveConfig,
 }
 
 impl Default for ServerConfig {
@@ -18,6 +35,7 @@ impl Default for ServerConfig {
             https: false,
             cert_path: None,
             key_path: None,
+            keep_alive: KeepAliveConfig::default(),
         }
     }
 }
@@ -95,6 +113,12 @@ impl ServerConfigBuilder {
 
     pub fn key_path(mut self, key_path: &str) -> Self {
         self.server_config.key_path = Some(key_path.to_string());
+
+        self
+    }
+
+    pub fn keep_alive(mut self, keep_alive_config: KeepAliveConfig) -> Self {
+        self.server_config.keep_alive = keep_alive_config;
 
         self
     }

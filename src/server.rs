@@ -2,7 +2,7 @@ use crate::connection::Connection;
 use crate::request::{parse_request, Request};
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
-use crate::server_config::ServerConfig;
+use crate::server_config::{KeepAliveConfig, ServerConfig};
 use crate::utils::StringUtils;
 use std::fs;
 use std::io::Result;
@@ -49,7 +49,10 @@ impl Server {
         ));
     }
 
-    pub fn listener(mut self, listener: impl Fn(&Request) -> Option<Response> + 'static + Send + Sync) -> Self {
+    pub fn listener(
+        mut self,
+        listener: impl Fn(&Request) -> Option<Response> + Send + Sync + 'static,
+    ) -> Self {
         self.listener = Some(Arc::new(listener));
 
         self
@@ -74,18 +77,20 @@ impl Server {
     }
 
     fn handle_connection(&mut self, stream: &mut TcpStream) -> Result<()> {
-        let mut connection = Connection::new(stream, self.https_config.clone());
+        let persistent = self.config.keep_alive != KeepAliveConfig::Off;
+
+        let mut connection = Connection::new(stream, self.https_config.clone(), persistent);
 
         loop {
             let request_bytes = match connection.read() {
                 Ok(None) => {
                     println!("Got none bytes");
-                    return Ok(())
-                },
+                    return Ok(());
+                }
                 Ok(Some(bytes)) if bytes.is_empty() => {
                     println!("Got empty message (TCP FIN, probably)");
-                    return Ok(())
-                },
+                    return Ok(());
+                }
                 Ok(Some(bytes)) => bytes,
                 Err(err) => return Err(err),
             };
@@ -99,6 +104,10 @@ impl Server {
             };
 
             connection.write(&response.as_bytes())?;
+
+            if !persistent {
+                return Ok(());
+            }
         }
     }
 
@@ -112,12 +121,24 @@ impl Server {
         let content = self.get_content(request);
 
         if let Ok(content_bytes) = content {
-            return Response::builder()
+            let mut builder = Response::builder()
                 .status_code(ResponseStatusCode::Ok)
                 .header("Content-Type", "text/html; charset=utf-8")
-                .header("Content-Length", &content_bytes.len().to_string())
-                .body(content_bytes)
-                .get();
+                .header("Content-Length", &content_bytes.len().to_string());
+
+            if let KeepAliveConfig::On {
+                timeout,
+                max_requests,
+                ..
+            } = self.config.keep_alive
+            {
+                builder = builder.header(
+                    "Keep-Alive",
+                    &format!("timeout={timeout}, max={max_requests}"),
+                );
+            }
+
+            return builder.body(content_bytes).get();
         }
 
         if let Some(listener) = &self.listener {

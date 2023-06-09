@@ -9,14 +9,14 @@ pub struct Connection<'a> {
 }
 
 impl<'a> Connection<'a> {
-    pub fn new(stream: &'a mut TcpStream, https_config: Option<Arc<rustls::ServerConfig>>) -> Self {
+    pub fn new(stream: &'a mut TcpStream, https_config: Option<Arc<rustls::ServerConfig>>, persistent: bool) -> Self {
         let tls_connection =
             https_config.map(|https_config| rustls::ServerConnection::new(https_config).unwrap());
 
         Connection {
             stream,
             tls_connection,
-            persistent: true,
+            persistent,
         }
     }
 
