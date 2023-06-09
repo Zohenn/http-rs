@@ -77,7 +77,13 @@ impl Server {
     }
 
     fn handle_connection(&mut self, stream: &mut TcpStream) -> Result<()> {
-        let persistent = self.config.keep_alive != KeepAliveConfig::Off;
+        let persistent = match self.config.keep_alive {
+            KeepAliveConfig::On { timeout, .. } => {
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(timeout as u64)))?;
+                true
+            }
+            _ => false,
+        };
 
         let mut connection = Connection::new(stream, self.https_config.clone(), persistent);
 

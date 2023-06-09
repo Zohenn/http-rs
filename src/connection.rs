@@ -9,7 +9,11 @@ pub struct Connection<'a> {
 }
 
 impl<'a> Connection<'a> {
-    pub fn new(stream: &'a mut TcpStream, https_config: Option<Arc<rustls::ServerConfig>>, persistent: bool) -> Self {
+    pub fn new(
+        stream: &'a mut TcpStream,
+        https_config: Option<Arc<rustls::ServerConfig>>,
+        persistent: bool,
+    ) -> Self {
         let tls_connection =
             https_config.map(|https_config| rustls::ServerConnection::new(https_config).unwrap());
 
@@ -74,7 +78,9 @@ impl<'a> Connection<'a> {
                     }
                     Err(err) => {
                         return match err.kind() {
-                            ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => Ok(None),
+                            ErrorKind::ConnectionReset
+                            | ErrorKind::ConnectionAborted
+                            | ErrorKind::TimedOut => Ok(None),
                             _ => Err(err),
                         }
                     }
