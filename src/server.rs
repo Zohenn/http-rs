@@ -1,5 +1,6 @@
 use crate::connection::Connection;
 use crate::request::{parse_request, Request};
+use crate::request_method::RequestMethod;
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
 use crate::server_config::{KeepAliveConfig, ServerConfig};
@@ -143,6 +144,10 @@ impl Server {
         let content = self.get_content(request);
 
         if let Ok(content_bytes) = content {
+            if !request.method.is_safe() {
+                return self.error_response(Some(request), ResponseStatusCode::MethodNotAllowed);
+            }
+
             let mut builder = Response::builder()
                 .status_code(ResponseStatusCode::Ok)
                 .header("Content-Type", "text/html; charset=utf-8")
@@ -179,13 +184,11 @@ impl Server {
     ) -> Response {
         let mut response_builder = ResponseBuilder::new().status_code(status_code);
 
-        let accepts_html = {
-            if let Some(request) = request {
-                let accept_header = request.headers.get("Accept");
-                accept_header.is_some() && accept_header.unwrap().contains("text/html")
-            } else {
-                false
-            }
+        let accepts_html = if let Some(request) = request {
+            let accept_header = request.headers.get("Accept");
+            accept_header.is_some() && accept_header.unwrap().contains("text/html")
+        } else {
+            false
         };
 
         if accepts_html {

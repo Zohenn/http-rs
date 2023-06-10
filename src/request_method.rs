@@ -1,13 +1,20 @@
 use std::str::FromStr;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum RequestMethod {
     Get,
     Head,
+    Options,
     Post,
     Put,
     Patch,
     Delete,
+}
+
+impl RequestMethod {
+    pub fn is_safe(&self) -> bool {
+        matches!(self, RequestMethod::Get | RequestMethod::Head | RequestMethod:: Options)
+    }
 }
 
 impl FromStr for RequestMethod {
@@ -17,6 +24,7 @@ impl FromStr for RequestMethod {
         match value {
             "GET" => Ok(RequestMethod::Get),
             "HEAD" => Ok(RequestMethod::Head),
+            "OPTIONS" => Ok(RequestMethod::Options),
             "POST" => Ok(RequestMethod::Post),
             "PUT" => Ok(RequestMethod::Put),
             "PATCH" => Ok(RequestMethod::Patch),
