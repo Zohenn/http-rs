@@ -32,7 +32,7 @@ impl<'a> Connection<'a> {
                 tls_connection.read_tls(self.stream)?;
                 match tls_connection.process_new_packets() {
                     Err(err) => {
-                        println!("Hanshake error: {err:?}");
+                        println!("Handshake error: {err:?}");
                         tls_connection.write_tls(self.stream).unwrap();
                         return Ok(None);
                     }
@@ -80,6 +80,7 @@ impl<'a> Connection<'a> {
                         return match err.kind() {
                             ErrorKind::ConnectionReset
                             | ErrorKind::ConnectionAborted
+                            // todo: timeout error should not be swallowed, return 408 instead
                             | ErrorKind::TimedOut => Ok(None),
                             _ => Err(err),
                         }

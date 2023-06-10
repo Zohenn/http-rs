@@ -31,7 +31,13 @@ impl Response {
         &self.body
     }
 
-    pub fn as_bytes(&mut self) -> Vec<u8> {
+    pub fn add_header(&mut self, header_name: &str, header_value: &str) -> &Self {
+        self.headers.insert(header_name.into(), header_value.into());
+
+        self
+    }
+
+    pub(crate) fn as_bytes(&mut self) -> Vec<u8> {
         let mut bytes: Vec<u8> = vec![];
 
         bytes.append(&mut self.version.as_bytes_vec());

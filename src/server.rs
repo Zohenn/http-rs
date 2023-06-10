@@ -79,7 +79,11 @@ impl Server {
 
     fn handle_connection(&mut self, stream: &mut TcpStream) -> Result<()> {
         let (persistent, max_requests) = match self.config.keep_alive {
-            KeepAliveConfig::On { timeout, max_requests, .. } => {
+            KeepAliveConfig::On {
+                timeout,
+                max_requests,
+                ..
+            } => {
                 stream.set_read_timeout(Some(std::time::Duration::from_secs(timeout as u64)))?;
                 (true, max_requests)
             }
@@ -105,17 +109,25 @@ impl Server {
 
             let request = parse_request(request_bytes.as_slice());
 
-            let mut response = if let Ok(request) = request {
-                self.serve_content(&request)
+            let mut response = if let Ok(request) = &request {
+                self.serve_content(request)
             } else {
                 self.error_response(None, ResponseStatusCode::BadRequest)
             };
+
+            let should_close = !persistent
+                || served_requests_count == max_requests - 1
+                || request.is_ok_and(|request| request.has_header("Connection", Some("close")));
+
+            if should_close {
+                response.add_header("Connection", "close");
+            }
 
             connection.write(&response.as_bytes())?;
 
             served_requests_count += 1;
 
-            if !persistent || served_requests_count >= max_requests {
+            if should_close {
                 return Ok(());
             }
         }

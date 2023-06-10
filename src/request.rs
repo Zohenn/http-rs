@@ -14,6 +14,16 @@ pub struct Request {
     pub body: Vec<u8>,
 }
 
+impl Request {
+    pub fn has_header(&self, header_name: &str, header_value: Option<&str>) -> bool {
+        match (self.headers.get(header_name), header_value) {
+            (Some(value), Some(header_value)) => header_value == value,
+            (Some(_), None) => true,
+            (None, _) => false,
+        }
+    }
+}
+
 impl fmt::Debug for Request {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Request")
