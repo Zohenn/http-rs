@@ -111,7 +111,11 @@ impl Server {
             let request = parse_request(request_bytes.as_slice());
 
             let mut response = if let Ok(request) = &request {
-                self.serve_content(request)
+                if request.method == RequestMethod::Options && request.url == "*" {
+                    self.options_response(request)
+                } else {
+                    self.serve_content(request)
+                }
             } else {
                 self.error_response(None, ResponseStatusCode::BadRequest)
             };
@@ -148,6 +152,8 @@ impl Server {
                 return self
                     .error_response(Some(request), ResponseStatusCode::MethodNotAllowed)
                     .add_header("Allow", &RequestMethod::safe_methods_str());
+            } else if request.method == RequestMethod::Options {
+                return self.options_response(request);
             }
 
             let mut builder = Response::builder()
@@ -198,12 +204,24 @@ impl Server {
         };
 
         if accepts_html {
+            let text_body = format!(
+                "<html><body><h1 style='text-align: center'>{} {}</h1></body></html>",
+                status_code as u16, status_code
+            );
             response_builder = response_builder
                 .header("Content-Type", "text/html; charset=utf-8")
-                .text_body(&format!(
-                    "<html><body><h1 style='text-align: center'>{} {}</h1></body></html>",
-                    status_code as u16, status_code
-                ))
+                .text_body(&text_body)
+        }
+
+        response_builder.get()
+    }
+
+    fn options_response(&self, request: &Request) -> Response {
+        let mut response_builder =
+            ResponseBuilder::new().status_code(ResponseStatusCode::NoContent);
+
+        if request.url != "*" {
+            response_builder = response_builder.header("Allow", &RequestMethod::safe_methods_str());
         }
 
         response_builder.get()

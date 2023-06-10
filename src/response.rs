@@ -105,7 +105,8 @@ impl ResponseBuilder {
     pub fn text_body(mut self, body: &str) -> Self {
         self.response.body = body.as_bytes().to_vec();
 
-        self
+        let body_len = self.response.body.len();
+        self.header("Content-Length", &body_len.to_string())
     }
 
     pub fn get(self) -> Response {
