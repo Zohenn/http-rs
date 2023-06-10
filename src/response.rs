@@ -31,7 +31,7 @@ impl Response {
         &self.body
     }
 
-    pub fn add_header(&mut self, header_name: &str, header_value: &str) -> &Self {
+    pub fn add_header(mut self, header_name: &str, header_value: &str) -> Self {
         self.headers.insert(header_name.into(), header_value.into());
 
         self
@@ -98,6 +98,12 @@ impl ResponseBuilder {
 
     pub fn body(mut self, body: Vec<u8>) -> Self {
         self.response.body = body;
+
+        self
+    }
+
+    pub fn text_body(mut self, body: &str) -> Self {
+        self.response.body = body.as_bytes().to_vec();
 
         self
     }

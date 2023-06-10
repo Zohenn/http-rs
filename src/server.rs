@@ -121,7 +121,7 @@ impl Server {
                 || request.is_ok_and(|request| request.has_header("Connection", Some("close")));
 
             if should_close {
-                response.add_header("Connection", "close");
+                response = response.add_header("Connection", "close");
             }
 
             connection.write(&response.as_bytes())?;
@@ -145,7 +145,9 @@ impl Server {
 
         if let Ok(content_bytes) = content {
             if !request.method.is_safe() {
-                return self.error_response(Some(request), ResponseStatusCode::MethodNotAllowed);
+                return self
+                    .error_response(Some(request), ResponseStatusCode::MethodNotAllowed)
+                    .add_header("Allow", &RequestMethod::safe_methods_str());
             }
 
             let mut builder = Response::builder()
@@ -165,7 +167,11 @@ impl Server {
                 );
             }
 
-            return builder.body(content_bytes).get();
+            if request.method == RequestMethod::Get {
+                builder = builder.body(content_bytes);
+            }
+
+            return builder.get();
         }
 
         if let Some(listener) = &self.listener {
@@ -186,7 +192,7 @@ impl Server {
 
         let accepts_html = if let Some(request) = request {
             let accept_header = request.headers.get("Accept");
-            accept_header.is_some() && accept_header.unwrap().contains("text/html")
+            matches!(accept_header, Some(v) if v.contains("text/html") || v.contains("text/*") || v.contains("*/*"))
         } else {
             false
         };
@@ -194,13 +200,10 @@ impl Server {
         if accepts_html {
             response_builder = response_builder
                 .header("Content-Type", "text/html; charset=utf-8")
-                .body(
-                    format!(
-                        "<html><body><h1 style='text-align: center'>{} {}</h1></body></html>",
-                        status_code as u16, status_code
-                    )
-                    .as_bytes_vec(),
-                )
+                .text_body(&format!(
+                    "<html><body><h1 style='text-align: center'>{} {}</h1></body></html>",
+                    status_code as u16, status_code
+                ))
         }
 
         response_builder.get()
