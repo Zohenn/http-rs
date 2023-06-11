@@ -41,6 +41,12 @@ pub enum ResponseStatusCode {
     HttpVersionNotSupported = 505,
 }
 
+impl ResponseStatusCode {
+    pub fn is_error(&self) -> bool {
+        *self as u16 >= 400
+    }
+}
+
 impl Display for ResponseStatusCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let string_value = match self {

@@ -1,11 +1,12 @@
 use crate::connection::Connection;
 use crate::request::{parse_request, Request};
+use crate::request_method::RequestMethod;
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
 use crate::server_config::{KeepAliveConfig, ServerConfig};
 use crate::utils::StringUtils;
 use std::fs;
-use std::io::Result;
+use std::io::{ErrorKind, Result};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::Arc;
@@ -110,7 +111,11 @@ impl Server {
             let request = parse_request(request_bytes.as_slice());
 
             let mut response = if let Ok(request) = &request {
-                self.serve_content(request)
+                if request.method == RequestMethod::Options && request.url == "*" {
+                    self.options_response(request)
+                } else {
+                    self.serve_content(request)
+                }
             } else {
                 self.error_response(None, ResponseStatusCode::BadRequest)
             };
@@ -120,7 +125,7 @@ impl Server {
                 || request.is_ok_and(|request| request.has_header("Connection", Some("close")));
 
             if should_close {
-                response.add_header("Connection", "close");
+                response = response.add_header("Connection", "close");
             }
 
             connection.write(&response.as_bytes())?;
@@ -134,15 +139,32 @@ impl Server {
     }
 
     fn get_content(&self, request: &Request) -> Result<Vec<u8>> {
-        let path = Path::new(&self.config.root).join(request.url.strip_prefix('/').unwrap());
+        let root_path = Path::new(&self.config.root);
+        let path = root_path.join(request.url.strip_prefix('/').unwrap());
+        let canonical_root_path = fs::canonicalize(root_path)?;
+        let canonical_path = fs::canonicalize(path)?;
 
-        fs::read(path)
+        // Do this check so no smarty-pants tries to access files
+        // outside web root directory, e.g. with GET /../example_http.rs
+        if !canonical_path.starts_with(canonical_root_path) {
+            return Err(std::io::Error::from(ErrorKind::PermissionDenied));
+        }
+
+        fs::read(canonical_path)
     }
 
     fn serve_content(&self, request: &Request) -> Response {
         let content = self.get_content(request);
 
         if let Ok(content_bytes) = content {
+            if !request.method.is_safe() {
+                return self
+                    .error_response(Some(request), ResponseStatusCode::MethodNotAllowed)
+                    .add_header("Allow", &RequestMethod::safe_methods_str());
+            } else if request.method == RequestMethod::Options {
+                return self.options_response(request);
+            }
+
             let mut builder = Response::builder()
                 .status_code(ResponseStatusCode::Ok)
                 .header("Content-Type", "text/html; charset=utf-8")
@@ -160,7 +182,11 @@ impl Server {
                 );
             }
 
-            return builder.body(content_bytes).get();
+            if request.method == RequestMethod::Get {
+                builder = builder.body(content_bytes);
+            }
+
+            return builder.get();
         }
 
         if let Some(listener) = &self.listener {
@@ -179,25 +205,32 @@ impl Server {
     ) -> Response {
         let mut response_builder = ResponseBuilder::new().status_code(status_code);
 
-        let accepts_html = {
-            if let Some(request) = request {
-                let accept_header = request.headers.get("Accept");
-                accept_header.is_some() && accept_header.unwrap().contains("text/html")
-            } else {
-                false
-            }
+        let accepts_html = if let Some(request) = request {
+            let accept_header = request.headers.get("Accept");
+            matches!(accept_header, Some(v) if v.contains("text/html") || v.contains("text/*") || v.contains("*/*"))
+        } else {
+            false
         };
 
         if accepts_html {
+            let text_body = format!(
+                "<html><body><h1 style='text-align: center'>{} {}</h1></body></html>",
+                status_code as u16, status_code
+            );
             response_builder = response_builder
                 .header("Content-Type", "text/html; charset=utf-8")
-                .body(
-                    format!(
-                        "<html><body><h1 style='text-align: center'>{} {}</h1></body></html>",
-                        status_code as u16, status_code
-                    )
-                    .as_bytes_vec(),
-                )
+                .text_body(&text_body)
+        }
+
+        response_builder.get()
+    }
+
+    fn options_response(&self, request: &Request) -> Response {
+        let mut response_builder =
+            ResponseBuilder::new().status_code(ResponseStatusCode::NoContent);
+
+        if request.url != "*" {
+            response_builder = response_builder.header("Allow", &RequestMethod::safe_methods_str());
         }
 
         response_builder.get()

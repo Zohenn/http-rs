@@ -24,6 +24,8 @@ impl<'a> Connection<'a> {
         }
     }
 
+    // todo: this should read until at least CRLFCRLF,
+    // then the result should be parsed to check if request might have a body
     pub fn read(&mut self) -> std::io::Result<Option<Vec<u8>>> {
         let mut request_bytes: Vec<u8> = Vec::new();
 
