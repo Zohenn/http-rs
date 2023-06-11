@@ -6,7 +6,7 @@ use crate::response_status_code::ResponseStatusCode;
 use crate::server_config::{KeepAliveConfig, ServerConfig};
 use crate::utils::StringUtils;
 use std::fs;
-use std::io::Result;
+use std::io::{ErrorKind, Result};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::Arc;
@@ -139,9 +139,18 @@ impl Server {
     }
 
     fn get_content(&self, request: &Request) -> Result<Vec<u8>> {
-        let path = Path::new(&self.config.root).join(request.url.strip_prefix('/').unwrap());
+        let root_path = Path::new(&self.config.root);
+        let path = root_path.join(request.url.strip_prefix('/').unwrap());
+        let canonical_root_path = fs::canonicalize(root_path)?;
+        let canonical_path = fs::canonicalize(path)?;
 
-        fs::read(path)
+        // Do this check so no smarty-pants tries to access files
+        // outside web root directory, e.g. with GET /../example_http.rs
+        if !canonical_path.starts_with(canonical_root_path) {
+            return Err(std::io::Error::from(ErrorKind::PermissionDenied));
+        }
+
+        fs::read(canonical_path)
     }
 
     fn serve_content(&self, request: &Request) -> Response {
