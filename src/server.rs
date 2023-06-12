@@ -165,9 +165,16 @@ impl Server {
                 return self.options_response(request);
             }
 
+            let mime_type = mime_guess::from_path(&request.url).first();
+            let content_type = if let Some(mime) = mime_type {
+                mime.essence_str().to_string() + if mime.type_() == "text" { "; charset=utf-8" } else { "" }
+            } else {
+                "application/octet-stream".to_string()
+            };
+
             let mut builder = Response::builder()
                 .status_code(ResponseStatusCode::Ok)
-                .header("Content-Type", "text/html; charset=utf-8")
+                .header("Content-Type", &content_type)
                 .header("Content-Length", &content_bytes.len().to_string());
 
             if let KeepAliveConfig::On {
