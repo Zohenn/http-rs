@@ -1,5 +1,6 @@
-mod utils;
 mod connection;
+mod header;
+mod utils;
 
 pub mod request;
 pub mod request_method;

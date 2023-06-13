@@ -2,6 +2,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub enum ReadUntil {
     DoubleCrLf,
     NoBytes(usize),
@@ -32,6 +33,7 @@ impl<'a> Connection<'a> {
     // todo: this should read until at least CRLFCRLF,
     // then the result should be parsed to check if request might have a body
     pub fn read(&mut self, read_until: ReadUntil) -> std::io::Result<Option<Vec<u8>>> {
+        println!("Reading with {read_until:?}");
         let mut request_bytes: Vec<u8> = Vec::new();
 
         loop {
@@ -87,7 +89,15 @@ impl<'a> Connection<'a> {
 
             match read_until {
                 ReadUntil::DoubleCrLf => {
-                    if let [.., b'\r', b'\n', b'\r', b'\n'] = request_bytes[..] {
+                    let mut crlf_found = false;
+                    for bytes in request_bytes.windows(4) {
+                        if let [.., b'\r', b'\n', b'\r', b'\n'] = bytes {
+                            crlf_found = true;
+                            break;
+                        }
+                    }
+
+                    if crlf_found {
                         break;
                     }
                 }

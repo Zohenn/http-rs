@@ -1,8 +1,9 @@
+use crate::header::is_header_valid;
 use crate::request_method::RequestMethod;
+use crate::utils::{IteratorUtils, StringUtils};
 use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
-use crate::utils::{StringUtils, IteratorUtils};
 
 type Result<T> = std::result::Result<T, RequestParseError>;
 
@@ -62,7 +63,7 @@ where
 
             values.push(*value);
         } else {
-            return Err(RequestParseError)
+            return Err(RequestParseError);
         }
     }
 }
@@ -77,6 +78,7 @@ fn parse_request_line<'a>(
     let url = String::from_vec(url_bytes);
 
     let version_bytes = take_until_crlf(iterator)?;
+    // todo: validate http version
     let version = String::from_vec(version_bytes);
 
     match method {
@@ -101,17 +103,22 @@ fn parse_headers<'a>(
                 return Ok(headers);
             }
 
-            return Err(RequestParseError)
+            return Err(RequestParseError);
         }
 
         let header = peekable_iterator.take_while_copy(|byte| **byte != b':');
+        // todo: do proper whitespace skip, because space here is optional, as defined by the spec
         peekable_iterator.next();
         let header_value = take_until_crlf(&mut peekable_iterator)?;
 
-        headers.insert(
-            String::from_vec(header),
-            String::from_vec(header_value),
-        );
+        let header_name = String::from_vec(header);
+        let header_value = String::from_vec(header_value);
+
+        if !is_header_valid(&header_name, &header_value) {
+            return Err(RequestParseError);
+        }
+
+        headers.insert(header_name, header_value);
     }
 }
 

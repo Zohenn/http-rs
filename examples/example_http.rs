@@ -16,7 +16,22 @@ fn main() -> Result<()> {
 
     Server::new(Some(config))
         .listener(|request| {
-            if request.url != "/long.html" {
+            if request.url == "/post" {
+                return Some(
+                    Response::builder()
+                        .status_code(ResponseStatusCode::Ok)
+                        .header(
+                            "Content-Type",
+                            request
+                                .headers
+                                .get("Content-Type")
+                                .unwrap_or(&"text/html".to_string()),
+                        )
+                        .header("Content-Length", &request.body.len().to_string())
+                        .body(request.body.clone())
+                        .get(),
+                );
+            } else if request.url != "/long.html" {
                 return None;
             }
 

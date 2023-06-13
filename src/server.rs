@@ -93,9 +93,24 @@ impl Server {
 
         let mut connection = Connection::new(stream, self.https_config.clone(), persistent);
         let mut served_requests_count = 0u8;
+        let mut current_request: Option<Request> = None;
 
         loop {
-            let request_bytes = match connection.read(ReadUntil::DoubleCrLf) {
+            let read_until = if let Some(request) = &current_request {
+                // todo: double unwrap is fine, since header value will be validated by parse_request,
+                // but parsing some values to numbers during parsing might be a good idea
+                ReadUntil::NoBytes(
+                    request
+                        .headers
+                        .get("Content-Length")
+                        .unwrap()
+                        .parse::<usize>()
+                        .unwrap(),
+                )
+            } else {
+                ReadUntil::DoubleCrLf
+            };
+            let request_bytes = match connection.read(read_until) {
                 Ok(None) => {
                     println!("Got none bytes");
                     return Ok(());
@@ -116,33 +131,104 @@ impl Server {
                 }
             };
 
-            let request = parse_request(request_bytes.as_slice());
+            let mut response: Option<Response> = None;
 
-            let mut response = if let Ok(request) = &request {
-                if request.method == RequestMethod::Options && request.url == "*" {
-                    self.options_response(request)
-                } else {
-                    self.serve_content(request)
+            match &mut current_request {
+                None => {
+                    let request = parse_request(request_bytes.as_slice());
+                    if let Ok(request) = request {
+                        let has_body = {
+                            if let Some(content_length_value) =
+                                request.headers.get("Content-Length")
+                            {
+                                let length = content_length_value.parse::<usize>().unwrap();
+                                !(request.body.len() == length || length > 0)
+                            } else {
+                                false
+                            }
+                        };
+
+                        if !has_body {
+                            response = Some(self.prepare_response(&request));
+                        } else {
+                            current_request = Some(request);
+                        }
+                    } else {
+                        response = Some(self.error_response(None, ResponseStatusCode::BadRequest));
+                    }
                 }
-            } else {
-                self.error_response(None, ResponseStatusCode::BadRequest)
-            };
-
-            let should_close = !persistent
-                || served_requests_count == max_requests - 1
-                || request.is_ok_and(|request| request.has_header("Connection", Some("close")));
-
-            if should_close {
-                response = response.add_header("Connection", "close");
+                Some(request) => {
+                    let length = request
+                        .headers
+                        .get("Content-Length")
+                        .unwrap()
+                        .parse::<usize>()
+                        .unwrap();
+                    if request_bytes.len() > length {
+                        response = Some(
+                            self.error_response(Some(request), ResponseStatusCode::BadRequest),
+                        );
+                    } else {
+                        request.body.extend(request_bytes);
+                        response = Some(self.serve_content(request));
+                    }
+                }
             }
 
-            connection.write(&response.as_bytes())?;
+            if let Some(response) = response {
+                let mut response = response;
+                let should_close = !persistent
+                    || served_requests_count == max_requests - 1
+                    || current_request
+                        .as_ref()
+                        .is_some_and(|request| request.has_header("Connection", Some("close")));
 
-            served_requests_count += 1;
+                if should_close {
+                    response = response.add_header("Connection", "close");
+                }
 
-            if should_close {
-                return Ok(());
+                connection.write(&response.as_bytes())?;
+
+                served_requests_count += 1;
+
+                if should_close {
+                    return Ok(());
+                }
             }
+            //
+            // let mut response = if let Ok(request) = &request {
+            //     if request.method == RequestMethod::Options && request.url == "*" {
+            //         self.options_response(request)
+            //     } else {
+            //         self.serve_content(request)
+            //     }
+            // } else {
+            //     self.error_response(None, ResponseStatusCode::BadRequest)
+            // };
+            //
+            // let should_close = !persistent
+            //     || served_requests_count == max_requests - 1
+            //     || request.is_ok_and(|request| request.has_header("Connection", Some("close")));
+            //
+            // if should_close {
+            //     response = response.add_header("Connection", "close");
+            // }
+            //
+            // connection.write(&response.as_bytes())?;
+            //
+            // served_requests_count += 1;
+            //
+            // if should_close {
+            //     return Ok(());
+            // }
+        }
+    }
+
+    fn prepare_response(&self, request: &Request) -> Response {
+        if request.method == RequestMethod::Options && request.url == "*" {
+            self.options_response(request)
+        } else {
+            self.serve_content(request)
         }
     }
 
