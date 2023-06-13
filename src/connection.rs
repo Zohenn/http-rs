@@ -2,6 +2,11 @@ use std::io::{ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
 
+pub enum ReadUntil {
+    DoubleCrLf,
+    NoBytes(usize),
+}
+
 pub struct Connection<'a> {
     stream: &'a mut TcpStream,
     tls_connection: Option<rustls::ServerConnection>,
@@ -26,66 +31,69 @@ impl<'a> Connection<'a> {
 
     // todo: this should read until at least CRLFCRLF,
     // then the result should be parsed to check if request might have a body
-    pub fn read(&mut self) -> std::io::Result<Option<Vec<u8>>> {
+    pub fn read(&mut self, read_until: ReadUntil) -> std::io::Result<Option<Vec<u8>>> {
         let mut request_bytes: Vec<u8> = Vec::new();
 
-        if let Some(tls_connection) = &mut self.tls_connection {
-            while tls_connection.is_handshaking() {
+        loop {
+            if let Some(tls_connection) = &mut self.tls_connection {
+                while tls_connection.is_handshaking() {
+                    tls_connection.read_tls(self.stream)?;
+                    match tls_connection.process_new_packets() {
+                        Err(err) => {
+                            println!("Handshake error: {err:?}");
+                            tls_connection.write_tls(self.stream).unwrap();
+                            return Ok(None);
+                        }
+                        Ok(state) => {
+                            println!("Handshaking state: {state:?}");
+                        }
+                    }
+                    tls_connection.write_tls(self.stream)?;
+                }
+
                 tls_connection.read_tls(self.stream)?;
                 match tls_connection.process_new_packets() {
                     Err(err) => {
-                        println!("Handshake error: {err:?}");
+                        println!("Plaintext read error: {err:?}");
                         tls_connection.write_tls(self.stream).unwrap();
                         return Ok(None);
                     }
                     Ok(state) => {
-                        println!("Handshaking state: {state:?}");
+                        let mut buf = vec![];
+                        buf.resize(state.plaintext_bytes_to_read(), 0u8);
+                        tls_connection.reader().read_exact(&mut buf)?;
+                        request_bytes.append(&mut buf);
                     }
                 }
-                tls_connection.write_tls(self.stream)?;
+            } else {
+                loop {
+                    let mut stream_buf: [u8; 255] = [0; 255];
+                    let read_length = self.stream.read(stream_buf.as_mut_slice())?;
+                    request_bytes.extend_from_slice(
+                        stream_buf
+                            .into_iter()
+                            .take(read_length)
+                            .collect::<Vec<u8>>()
+                            .as_slice(),
+                    );
+
+                    if read_length < stream_buf.len() {
+                        break;
+                    }
+
+                    stream_buf.fill(0);
+                }
             }
 
-            tls_connection.read_tls(self.stream)?;
-            match tls_connection.process_new_packets() {
-                Err(err) => {
-                    println!("Plaintext read error: {err:?}");
-                    tls_connection.write_tls(self.stream).unwrap();
-                    return Ok(None);
-                }
-                Ok(state) => {
-                    let mut buf = vec![];
-                    buf.resize(state.plaintext_bytes_to_read(), 0u8);
-                    tls_connection.reader().read_exact(&mut buf)?;
-                    request_bytes.append(&mut buf);
-                }
-            }
-        } else {
-            loop {
-                let mut stream_buf: [u8; 255] = [0; 255];
-                let read_result = self.stream.read(stream_buf.as_mut_slice());
-                match read_result {
-                    Ok(n) => {
-                        request_bytes.extend_from_slice(
-                            stream_buf
-                                .into_iter()
-                                .take(n)
-                                .collect::<Vec<u8>>()
-                                .as_slice(),
-                        );
-                        // raw_request = raw_request.add(std::str::from_utf8(&stream_buf).unwrap());
-                        if n < stream_buf.len() {
-                            break;
-                        }
-                        stream_buf.fill(0);
+            match read_until {
+                ReadUntil::DoubleCrLf => {
+                    if let [.., b'\r', b'\n', b'\r', b'\n'] = request_bytes[..] {
+                        break;
                     }
-                    Err(err) => {
-                        return match err.kind() {
-                            ErrorKind::ConnectionReset
-                            | ErrorKind::ConnectionAborted
-                            // todo: timeout error should not be swallowed, return 408 instead
-                            | ErrorKind::TimedOut => Ok(None),
-                            _ => Err(err),
-                        }
+                }
+                ReadUntil::NoBytes(length) => {
+                    if request_bytes.len() >= length {
+                        break;
                     }
                 }
             }

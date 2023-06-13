@@ -6,7 +6,7 @@ use std::net::TcpStream;
 fn main() -> Result<()> {
     let mut tcp = TcpStream::connect("127.0.0.1:80")?;
 
-    let message = "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n";
+    let message = "GET /index.html HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n";
     let message2 = "\r\n";
 
     // Should wait for the second write before processing request.

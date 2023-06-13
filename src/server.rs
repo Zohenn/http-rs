@@ -1,4 +1,4 @@
-use crate::connection::Connection;
+use crate::connection::{Connection, ReadUntil};
 use crate::request::{parse_request, Request};
 use crate::request_method::RequestMethod;
 use crate::response::{Response, ResponseBuilder};
@@ -95,7 +95,7 @@ impl Server {
         let mut served_requests_count = 0u8;
 
         loop {
-            let request_bytes = match connection.read() {
+            let request_bytes = match connection.read(ReadUntil::DoubleCrLf) {
                 Ok(None) => {
                     println!("Got none bytes");
                     return Ok(());
@@ -105,7 +105,15 @@ impl Server {
                     return Ok(());
                 }
                 Ok(Some(bytes)) => bytes,
-                Err(err) => return Err(err),
+                Err(err) => {
+                    return match err.kind() {
+                        ErrorKind::ConnectionReset
+                        | ErrorKind::ConnectionAborted
+                        // todo: timeout error should not be swallowed, return 408 instead
+                        | ErrorKind::TimedOut => Ok(()),
+                        _ => Err(err),
+                    };
+                }
             };
 
             let request = parse_request(request_bytes.as_slice());
@@ -167,7 +175,12 @@ impl Server {
 
             let mime_type = mime_guess::from_path(&request.url).first();
             let content_type = if let Some(mime) = mime_type {
-                mime.essence_str().to_string() + if mime.type_() == "text" { "; charset=utf-8" } else { "" }
+                let charset = if mime.type_() == "text" {
+                    "; charset=utf-8"
+                } else {
+                    ""
+                };
+                mime.essence_str().to_string() + charset
             } else {
                 "application/octet-stream".to_string()
             };
