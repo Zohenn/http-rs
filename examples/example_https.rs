@@ -17,6 +17,21 @@ fn main() -> Result<()> {
         .listener(|request| {
             if request.url.starts_with("/public") {
                 return None;
+            } else if request.url == "/post" {
+                return Some(
+                    Response::builder()
+                        .status_code(ResponseStatusCode::Ok)
+                        .header(
+                            "Content-Type",
+                            request
+                                .headers
+                                .get("Content-Type")
+                                .unwrap_or(&"text/html".to_string()),
+                        )
+                        .header("Content-Length", &request.body.len().to_string())
+                        .body(request.body.clone())
+                        .get(),
+                );
             }
 
             Some(

@@ -105,7 +105,8 @@ impl Server {
                         .get("Content-Length")
                         .unwrap()
                         .parse::<usize>()
-                        .unwrap(),
+                        .unwrap()
+                        - request.body.len(),
                 )
             } else {
                 ReadUntil::DoubleCrLf
@@ -142,7 +143,7 @@ impl Server {
                                 request.headers.get("Content-Length")
                             {
                                 let length = content_length_value.parse::<usize>().unwrap();
-                                !(request.body.len() == length || length > 0)
+                                !(request.body.len() == length || length == 0)
                             } else {
                                 false
                             }
@@ -189,38 +190,13 @@ impl Server {
 
                 connection.write(&response.as_bytes())?;
 
+                current_request = None;
                 served_requests_count += 1;
 
                 if should_close {
                     return Ok(());
                 }
             }
-            //
-            // let mut response = if let Ok(request) = &request {
-            //     if request.method == RequestMethod::Options && request.url == "*" {
-            //         self.options_response(request)
-            //     } else {
-            //         self.serve_content(request)
-            //     }
-            // } else {
-            //     self.error_response(None, ResponseStatusCode::BadRequest)
-            // };
-            //
-            // let should_close = !persistent
-            //     || served_requests_count == max_requests - 1
-            //     || request.is_ok_and(|request| request.has_header("Connection", Some("close")));
-            //
-            // if should_close {
-            //     response = response.add_header("Connection", "close");
-            // }
-            //
-            // connection.write(&response.as_bytes())?;
-            //
-            // served_requests_count += 1;
-            //
-            // if should_close {
-            //     return Ok(());
-            // }
         }
     }
 

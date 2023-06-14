@@ -1,3 +1,4 @@
+use rustls::IoState;
 use std::io::{ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
@@ -33,38 +34,46 @@ impl<'a> Connection<'a> {
     // todo: this should read until at least CRLFCRLF,
     // then the result should be parsed to check if request might have a body
     pub fn read(&mut self, read_until: ReadUntil) -> std::io::Result<Option<Vec<u8>>> {
-        println!("Reading with {read_until:?}");
         let mut request_bytes: Vec<u8> = Vec::new();
 
         loop {
             if let Some(tls_connection) = &mut self.tls_connection {
+                let mut read_plaintext_bytes = false;
                 while tls_connection.is_handshaking() {
                     tls_connection.read_tls(self.stream)?;
-                    match tls_connection.process_new_packets() {
+                    match &mut tls_connection.process_new_packets() {
                         Err(err) => {
                             println!("Handshake error: {err:?}");
                             tls_connection.write_tls(self.stream).unwrap();
                             return Ok(None);
                         }
                         Ok(state) => {
-                            println!("Handshaking state: {state:?}");
+                            println!(
+                                "Handshaking state: {state:?}, {}",
+                                tls_connection.is_handshaking()
+                            );
+                            if state.plaintext_bytes_to_read() > 0 {
+                                request_bytes
+                                    .append(&mut read_tls_plaintext_bytes(tls_connection, state)?);
+                                read_plaintext_bytes = true;
+                            }
                         }
                     }
                     tls_connection.write_tls(self.stream)?;
                 }
 
-                tls_connection.read_tls(self.stream)?;
-                match tls_connection.process_new_packets() {
-                    Err(err) => {
-                        println!("Plaintext read error: {err:?}");
-                        tls_connection.write_tls(self.stream).unwrap();
-                        return Ok(None);
-                    }
-                    Ok(state) => {
-                        let mut buf = vec![];
-                        buf.resize(state.plaintext_bytes_to_read(), 0u8);
-                        tls_connection.reader().read_exact(&mut buf)?;
-                        request_bytes.append(&mut buf);
+                if !read_plaintext_bytes {
+                    tls_connection.read_tls(self.stream)?;
+                    match &mut tls_connection.process_new_packets() {
+                        Err(err) => {
+                            println!("Plaintext read error: {err:?}");
+                            tls_connection.write_tls(self.stream).unwrap();
+                            return Ok(None);
+                        }
+                        Ok(state) => {
+                            request_bytes
+                                .append(&mut read_tls_plaintext_bytes(tls_connection, state)?);
+                        }
                     }
                 }
             } else {
@@ -114,15 +123,30 @@ impl<'a> Connection<'a> {
 
     pub fn write(&mut self, bytes: &[u8]) -> std::io::Result<()> {
         if let Some(conn) = &mut self.tls_connection {
+            // todo: try not to set unlimited buffer size
+            conn.set_buffer_limit(None);
             conn.writer().write_all(bytes)?;
             if !self.persistent {
                 conn.send_close_notify();
             }
-            conn.write_tls(self.stream)?;
+            while conn.wants_write() {
+                conn.write_tls(self.stream)?;
+            }
         } else {
             self.stream.write_all(bytes)?;
         }
 
         Ok(())
     }
+}
+
+fn read_tls_plaintext_bytes(
+    tls_connection: &mut rustls::ServerConnection,
+    state: &IoState,
+) -> std::io::Result<Vec<u8>> {
+    let mut buf = vec![];
+    buf.resize(state.plaintext_bytes_to_read(), 0u8);
+    tls_connection.reader().read_exact(&mut buf)?;
+
+    Ok(buf)
 }
