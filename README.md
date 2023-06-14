@@ -9,7 +9,7 @@ A very noob attempt at writing code in Rust.
   - [x] 405 when requesting static content with method other than GET
   - [x] HEAD response without body
   - [x] OPTIONS requests
-- [ ] handling requests with non-empty body
+- [x] handling requests with non-empty body
 - [ ] custom builder-pattern macro
 - [x] keep-alive
 - [ ] binary compilation target that serves static files only and reads config from config file
