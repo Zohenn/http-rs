@@ -23,6 +23,12 @@ impl Request {
             (None, _) => false,
         }
     }
+
+    pub fn content_length(&self) -> Option<usize> {
+        self.headers
+            .get("Content-Length")
+            .map(|content_length_value| content_length_value.parse::<usize>().unwrap())
+    }
 }
 
 impl fmt::Debug for Request {

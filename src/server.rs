@@ -38,6 +38,7 @@ impl Server {
         let key = self.config.load_key();
 
         if certs.is_empty() || key.is_none() {
+            // todo: either panic or log error here
             return;
         }
 
@@ -97,17 +98,7 @@ impl Server {
 
         loop {
             let read_until = if let Some(request) = &current_request {
-                // todo: double unwrap is fine, since header value will be validated by parse_request,
-                // but parsing some values to numbers during parsing might be a good idea
-                ReadUntil::NoBytes(
-                    request
-                        .headers
-                        .get("Content-Length")
-                        .unwrap()
-                        .parse::<usize>()
-                        .unwrap()
-                        - request.body.len(),
-                )
+                ReadUntil::NoBytes(request.content_length().unwrap() - request.body.len())
             } else {
                 ReadUntil::DoubleCrLf
             };
@@ -138,16 +129,7 @@ impl Server {
                 None => {
                     let request = parse_request(request_bytes.as_slice());
                     if let Ok(request) = request {
-                        let has_body = {
-                            if let Some(content_length_value) =
-                                request.headers.get("Content-Length")
-                            {
-                                let length = content_length_value.parse::<usize>().unwrap();
-                                !(request.body.len() == length || length == 0)
-                            } else {
-                                false
-                            }
-                        };
+                        let has_body = matches!(request.content_length(), Some(length) if !(request.body.len() == length || length == 0));
 
                         if !has_body {
                             response = Some(self.prepare_response(&request));
@@ -159,12 +141,7 @@ impl Server {
                     }
                 }
                 Some(request) => {
-                    let length = request
-                        .headers
-                        .get("Content-Length")
-                        .unwrap()
-                        .parse::<usize>()
-                        .unwrap();
+                    let length = request.content_length().unwrap();
                     if request_bytes.len() > length {
                         response = Some(
                             self.error_response(Some(request), ResponseStatusCode::BadRequest),
@@ -255,13 +232,15 @@ impl Server {
             if let KeepAliveConfig::On {
                 timeout,
                 max_requests,
-                ..
+                include_header,
             } = self.config.keep_alive
             {
-                builder = builder.header(
-                    "Keep-Alive",
-                    &format!("timeout={timeout}, max={max_requests}"),
-                );
+                if include_header {
+                    builder = builder.header(
+                        "Keep-Alive",
+                        &format!("timeout={timeout}, max={max_requests}"),
+                    );
+                }
             }
 
             if request.method == RequestMethod::Get {
