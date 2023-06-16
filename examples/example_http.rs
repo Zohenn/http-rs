@@ -2,9 +2,16 @@ use http_rs::response::Response;
 use http_rs::response_status_code::ResponseStatusCode;
 use http_rs::server::Server;
 use http_rs::server_config::{KeepAliveConfig, ServerConfigBuilder};
+use log::LevelFilter;
+use pretty_env_logger::env_logger::Target;
 use std::io::Result;
 
 fn main() -> Result<()> {
+    pretty_env_logger::formatted_timed_builder()
+        .filter_level(LevelFilter::Debug)
+        .target(Target::Stdout)
+        .init();
+
     let config = ServerConfigBuilder::new()
         .root("root")
         .keep_alive(KeepAliveConfig::On {

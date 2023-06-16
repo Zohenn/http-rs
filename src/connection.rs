@@ -1,3 +1,4 @@
+use log::{debug, error};
 use rustls::IoState;
 use std::io::{ErrorKind, Read, Write};
 use std::net::TcpStream;
@@ -43,12 +44,12 @@ impl<'a> Connection<'a> {
                     tls_connection.read_tls(self.stream)?;
                     match &mut tls_connection.process_new_packets() {
                         Err(err) => {
-                            println!("Handshake error: {err:?}");
+                            error!("Handshake error: {err:?}");
                             tls_connection.write_tls(self.stream).unwrap();
                             return Ok(None);
                         }
                         Ok(state) => {
-                            println!(
+                            debug!(
                                 "Handshaking state: {state:?}, {}",
                                 tls_connection.is_handshaking()
                             );
@@ -66,7 +67,7 @@ impl<'a> Connection<'a> {
                     tls_connection.read_tls(self.stream)?;
                     match &mut tls_connection.process_new_packets() {
                         Err(err) => {
-                            println!("Plaintext read error: {err:?}");
+                            error!("Plaintext read error: {err:?}");
                             tls_connection.write_tls(self.stream).unwrap();
                             return Ok(None);
                         }

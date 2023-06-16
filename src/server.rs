@@ -4,7 +4,7 @@ use crate::request_method::RequestMethod;
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
 use crate::server_config::{KeepAliveConfig, ServerConfig};
-use crate::utils::StringUtils;
+use log::{debug, info};
 use std::fs;
 use std::io::{ErrorKind, Result};
 use std::net::{TcpListener, TcpStream};
@@ -66,12 +66,12 @@ impl Server {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", self.config.port))?;
 
         for stream in listener.incoming() {
-            println!("New connection");
+            debug!("New connection");
             let mut cloned_server = self.clone();
             std::thread::spawn(move || {
                 match cloned_server.handle_connection(&mut stream.unwrap()) {
-                    Ok(_) => println!("Connection closed"),
-                    Err(err) => println!("Connection error: {err:?}"),
+                    Ok(_) => debug!("Connection closed"),
+                    Err(err) => info!("Connection error: {err:?}"),
                 }
             });
         }
@@ -104,11 +104,11 @@ impl Server {
             };
             let request_bytes = match connection.read(read_until) {
                 Ok(None) => {
-                    println!("Got none bytes");
+                    debug!("Got none bytes");
                     return Ok(());
                 }
                 Ok(Some(bytes)) if bytes.is_empty() => {
-                    println!("Got empty message (TCP FIN, probably)");
+                    debug!("Got empty message (TCP FIN, probably)");
                     return Ok(());
                 }
                 Ok(Some(bytes)) => bytes,
