@@ -1,3 +1,4 @@
+use crate::http_version::HttpVersion;
 use crate::response_status_code::ResponseStatusCode;
 use crate::utils::StringUtils;
 use std::collections::HashMap;
@@ -7,7 +8,7 @@ static CRLF: [u8; 2] = [b'\r', b'\n'];
 
 #[derive(Debug)]
 pub struct Response {
-    version: String,
+    version: HttpVersion,
     status_code: ResponseStatusCode,
     headers: HashMap<String, String>,
     body: Vec<u8>,
@@ -15,8 +16,8 @@ pub struct Response {
 
 #[allow(dead_code)]
 impl Response {
-    pub fn version(&self) -> &str {
-        self.version.as_str()
+    pub fn version(&self) -> &HttpVersion {
+        &self.version
     }
 
     pub fn status_code(&self) -> &ResponseStatusCode {
@@ -40,7 +41,7 @@ impl Response {
     pub(crate) fn as_bytes(&mut self) -> Vec<u8> {
         let mut bytes: Vec<u8> = vec![];
 
-        bytes.append(&mut self.version.as_bytes_vec());
+        bytes.append(&mut self.version.as_bytes());
         bytes.push(SPACE);
         bytes.append(&mut self.status_code.as_bytes());
         bytes.extend_from_slice(&CRLF);
@@ -74,7 +75,7 @@ impl ResponseBuilder {
     pub fn new() -> Self {
         ResponseBuilder {
             response: Response {
-                version: String::from("HTTP/1.1"),
+                version: HttpVersion::Http1_1,
                 status_code: ResponseStatusCode::Ok,
                 headers: HashMap::new(),
                 body: vec![],

@@ -46,6 +46,19 @@ impl ResponseStatusCode {
     pub fn is_error(&self) -> bool {
         *self as u16 >= 400
     }
+
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes: Vec<u8> = vec![];
+
+        let mut code_string: Vec<u8> = (*self as u16).to_string().as_bytes_vec();
+        let mut status_string: Vec<u8> = self.to_string().as_bytes_vec();
+
+        bytes.append(&mut code_string);
+        bytes.push(b' ');
+        bytes.append(&mut status_string);
+
+        bytes
+    }
 }
 
 impl Display for ResponseStatusCode {
@@ -80,20 +93,5 @@ impl Display for ResponseStatusCode {
         };
 
         write!(f, "{}", string_value)
-    }
-}
-
-impl ResponseStatusCode {
-    pub fn as_bytes(&self) -> Vec<u8> {
-        let mut bytes: Vec<u8> = vec![];
-
-        let mut code_string: Vec<u8> = (*self as u16).to_string().as_bytes_vec();
-        let mut status_string: Vec<u8> = self.to_string().as_bytes_vec();
-
-        bytes.append(&mut code_string);
-        bytes.push(b' ');
-        bytes.append(&mut status_string);
-
-        bytes
     }
 }

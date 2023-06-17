@@ -37,9 +37,12 @@ impl Server {
         let certs = self.config.load_certs();
         let key = self.config.load_key();
 
-        if certs.is_empty() || key.is_none() {
-            // todo: either panic or log error here
-            return;
+        if certs.is_empty() {
+            panic!("Specified file does not contain a valid certificate");
+        }
+
+        if key.is_none() {
+            panic!("Specified file does not contain a valid private key");
         }
 
         self.https_config = Some(Arc::new(

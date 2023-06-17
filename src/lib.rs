@@ -2,6 +2,7 @@ mod connection;
 mod header;
 mod utils;
 
+pub mod http_version;
 pub mod request;
 pub mod request_method;
 pub mod response;

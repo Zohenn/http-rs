@@ -1,4 +1,5 @@
 use crate::header::is_header_valid;
+use crate::http_version::HttpVersion;
 use crate::request_method::RequestMethod;
 use crate::utils::{IteratorUtils, StringUtils};
 use std::collections::HashMap;
@@ -10,7 +11,7 @@ type Result<T> = std::result::Result<T, RequestParseError>;
 pub struct Request {
     pub method: RequestMethod,
     pub url: String,
-    pub version: String,
+    pub version: HttpVersion,
     pub headers: HashMap<String, String>,
     pub body: Vec<u8>,
 }
@@ -76,7 +77,7 @@ where
 
 fn parse_request_line<'a>(
     iterator: &mut (impl Iterator<Item = &'a u8> + IteratorUtils<'a, u8>),
-) -> Result<(RequestMethod, String, String)> {
+) -> Result<(RequestMethod, String, HttpVersion)> {
     let method_bytes = iterator.take_while_copy(|byte| **byte != b' ');
     let method = RequestMethod::from_str(std::str::from_utf8(&method_bytes).unwrap());
 
@@ -84,11 +85,12 @@ fn parse_request_line<'a>(
     let url = String::from_vec(url_bytes);
 
     let version_bytes = take_until_crlf(iterator)?;
-    // todo: validate http version
-    let version = String::from_vec(version_bytes);
+    let version = HttpVersion::from_str(std::str::from_utf8(&version_bytes).unwrap());
 
-    match method {
-        Ok(method) if !url.is_empty() => Ok((method, url, version)),
+    match (method, version) {
+        (Ok(method), Ok(version)) if !url.is_empty() && version == HttpVersion::Http1_1 => {
+            Ok((method, url, version))
+        }
         _ => Err(RequestParseError),
     }
 }
