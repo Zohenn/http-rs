@@ -1,12 +1,13 @@
 use crate::header::is_header_valid;
 use crate::http_version::HttpVersion;
 use crate::request_method::RequestMethod;
-use crate::utils::{IteratorUtils, StringUtils};
+use crate::utils::{skip_whitespace, IteratorUtils, StringUtils};
 use std::collections::HashMap;
+use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 
-type Result<T> = std::result::Result<T, RequestParseError>;
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub struct Request {
     pub method: RequestMethod,
@@ -44,9 +45,6 @@ impl fmt::Debug for Request {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct RequestParseError;
-
 fn take_until_crlf<'a>(iterator: &mut impl Iterator<Item = &'a u8>) -> Result<Vec<u8>>
 where
     u8: Copy,
@@ -64,13 +62,13 @@ where
 
                     Ok(values)
                 } else {
-                    Err(RequestParseError)
+                    Err("Could not find CRLF".into())
                 };
             }
 
             values.push(*value);
         } else {
-            return Err(RequestParseError);
+            return Err("Could not find CRLF".into());
         }
     }
 }
@@ -91,7 +89,7 @@ fn parse_request_line<'a>(
         (Ok(method), Ok(version)) if !url.is_empty() && version == HttpVersion::Http1_1 => {
             Ok((method, url, version))
         }
-        _ => Err(RequestParseError),
+        _ => Err("Request line parsing error".into()),
     }
 }
 
@@ -111,19 +109,18 @@ fn parse_headers<'a>(
                 return Ok(headers);
             }
 
-            return Err(RequestParseError);
+            return Err("Found CR without LF in header line".into());
         }
 
         let header = peekable_iterator.take_while_copy(|byte| **byte != b':');
-        // todo: do proper whitespace skip, because space here is optional, as defined by the spec
-        peekable_iterator.next();
+        skip_whitespace(&mut peekable_iterator);
         let header_value = take_until_crlf(&mut peekable_iterator)?;
 
         let header_name = String::from_vec(header);
         let header_value = String::from_vec(header_value);
 
         if !is_header_valid(&header_name, &header_value) {
-            return Err(RequestParseError);
+            return Err("Invalid header".into());
         }
 
         headers.insert(header_name, header_value);

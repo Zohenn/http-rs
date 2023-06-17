@@ -1,3 +1,4 @@
+use std::iter::Peekable;
 use std::str::Utf8Error;
 
 pub trait StringUtils {
@@ -41,5 +42,11 @@ where
 {
     fn take_while_copy(&mut self, predicate: impl FnMut(&&'a T) -> bool) -> Vec<T> {
         self.take_while(predicate).copied().collect()
+    }
+}
+
+pub fn skip_whitespace<'a>(iterator: &mut Peekable<impl Iterator<Item = &'a u8>>) {
+    while iterator.peek().unwrap_or(&&0u8).is_ascii_whitespace() {
+        iterator.next();
     }
 }
