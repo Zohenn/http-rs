@@ -32,8 +32,6 @@ impl<'a> Connection<'a> {
         }
     }
 
-    // todo: this should read until at least CRLFCRLF,
-    // then the result should be parsed to check if request might have a body
     pub fn read(&mut self, read_until: ReadUntil) -> std::io::Result<Option<Vec<u8>>> {
         let mut request_bytes: Vec<u8> = Vec::new();
 
@@ -81,12 +79,11 @@ impl<'a> Connection<'a> {
                 loop {
                     let mut stream_buf: [u8; 255] = [0; 255];
                     let read_length = self.stream.read(stream_buf.as_mut_slice())?;
-                    request_bytes.extend_from_slice(
-                        stream_buf
+                    request_bytes.append(
+                        &mut stream_buf
                             .into_iter()
                             .take(read_length)
-                            .collect::<Vec<u8>>()
-                            .as_slice(),
+                            .collect::<Vec<u8>>(),
                     );
 
                     if read_length < stream_buf.len() {

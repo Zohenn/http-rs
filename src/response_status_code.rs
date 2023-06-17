@@ -29,6 +29,7 @@ pub enum ResponseStatusCode {
     Forbidden = 403,
     NotFound = 404,
     MethodNotAllowed = 405,
+    RequestTimeout = 408,
     ImATeapot = 418,
     TooManyRequests = 429,
 
@@ -67,6 +68,7 @@ impl Display for ResponseStatusCode {
             ResponseStatusCode::Forbidden => "Forbidden",
             ResponseStatusCode::NotFound => "Not Found",
             ResponseStatusCode::MethodNotAllowed => "Method Not Allowed",
+            ResponseStatusCode::RequestTimeout => "Request Timeout",
             ResponseStatusCode::ImATeapot => "I'm a teapot",
             ResponseStatusCode::TooManyRequests => "Too Many Requests",
             ResponseStatusCode::InternalServerError => "Internal Server Error",

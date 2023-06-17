@@ -97,6 +97,8 @@ impl Server {
         let mut current_request: Option<Request> = None;
 
         loop {
+            let mut response: Option<Response> = None;
+
             let read_until = if let Some(request) = &current_request {
                 ReadUntil::NoBytes(request.content_length().unwrap() - request.body.len())
             } else {
@@ -112,43 +114,44 @@ impl Server {
                     return Ok(());
                 }
                 Ok(Some(bytes)) => bytes,
-                Err(err) => {
-                    return match err.kind() {
-                        ErrorKind::ConnectionReset
-                        | ErrorKind::ConnectionAborted
-                        // todo: timeout error should not be swallowed, return 408 instead
-                        | ErrorKind::TimedOut => Ok(()),
-                        _ => Err(err),
-                    };
-                }
+                Err(err) => match err.kind() {
+                    ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => return Ok(()),
+                    ErrorKind::TimedOut => {
+                        response =
+                            Some(self.error_response(None, ResponseStatusCode::RequestTimeout));
+                        vec![]
+                    }
+                    _ => return Err(err),
+                },
             };
 
-            let mut response: Option<Response> = None;
+            if !response.is_some() {
+                match &mut current_request {
+                    None => {
+                        let request = parse_request(request_bytes.as_slice());
+                        if let Ok(request) = request {
+                            let has_body = matches!(request.content_length(), Some(length) if !(request.body.len() == length || length == 0));
 
-            match &mut current_request {
-                None => {
-                    let request = parse_request(request_bytes.as_slice());
-                    if let Ok(request) = request {
-                        let has_body = matches!(request.content_length(), Some(length) if !(request.body.len() == length || length == 0));
-
-                        if !has_body {
-                            response = Some(self.prepare_response(&request));
+                            if !has_body {
+                                response = Some(self.prepare_response(&request));
+                            } else {
+                                current_request = Some(request);
+                            }
                         } else {
-                            current_request = Some(request);
+                            response =
+                                Some(self.error_response(None, ResponseStatusCode::BadRequest));
                         }
-                    } else {
-                        response = Some(self.error_response(None, ResponseStatusCode::BadRequest));
                     }
-                }
-                Some(request) => {
-                    let length = request.content_length().unwrap();
-                    if request_bytes.len() > length {
-                        response = Some(
-                            self.error_response(Some(request), ResponseStatusCode::BadRequest),
-                        );
-                    } else {
-                        request.body.extend(request_bytes);
-                        response = Some(self.serve_content(request));
+                    Some(request) => {
+                        let length = request.content_length().unwrap();
+                        if request_bytes.len() > length {
+                            response = Some(
+                                self.error_response(Some(request), ResponseStatusCode::BadRequest),
+                            );
+                        } else {
+                            request.body.extend(request_bytes);
+                            response = Some(self.serve_content(request));
+                        }
                     }
                 }
             }
