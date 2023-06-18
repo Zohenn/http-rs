@@ -43,6 +43,8 @@ impl<'a> Connection<'a> {
         let mut request_bytes: Vec<u8> = Vec::new();
 
         loop {
+            let prev_iter_len = request_bytes.len();
+
             if let Some(tls_connection) = &mut self.tls_connection {
                 let mut read_plaintext_bytes = false;
                 while tls_connection.is_handshaking() {
@@ -99,6 +101,13 @@ impl<'a> Connection<'a> {
 
                     stream_buf.fill(0);
                 }
+            }
+
+            // Fixes infinite loop when peer closes connection before whole HTTP message
+            // has been received. In such case read() returns nothing and this is the easier
+            // way to check if that's the case.
+            if request_bytes.len() == prev_iter_len {
+                break;
             }
 
             match read_until {
