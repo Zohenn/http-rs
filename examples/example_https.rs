@@ -14,7 +14,6 @@ fn main() -> Result<()> {
 
     let config = ServerConfigBuilder::new()
         .root("root")
-        .port(443)
         .https(true)
         .cert_path("keys/server.crt")
         .key_path("keys/server.key")

@@ -1,7 +1,7 @@
 use log::{debug, error};
 use rustls::IoState;
 use std::io::{ErrorKind, Read, Write};
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -22,8 +22,15 @@ impl<'a> Connection<'a> {
         https_config: Option<Arc<rustls::ServerConfig>>,
         persistent: bool,
     ) -> Self {
-        let tls_connection =
-            https_config.map(|https_config| rustls::ServerConnection::new(https_config).unwrap());
+        let port = match stream.local_addr().unwrap() {
+            SocketAddr::V4(addr) => addr.port(),
+            SocketAddr::V6(_) => unimplemented!(),
+        };
+        let tls_connection = match port {
+            443 => https_config
+                .map(|https_config| rustls::ServerConnection::new(https_config).unwrap()),
+            _ => None,
+        };
 
         Connection {
             stream,

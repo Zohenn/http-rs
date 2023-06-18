@@ -5,6 +5,7 @@ use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
 use crate::server_config::{KeepAliveConfig, ServerConfig};
 use log::{debug, info};
+use std::fmt::format;
 use std::fs;
 use std::io::{ErrorKind, Result};
 use std::net::{TcpListener, TcpStream};
@@ -66,23 +67,42 @@ impl Server {
     pub fn run(&mut self) -> Result<()> {
         self.init_https();
 
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", self.config.port))?;
+        let mut listeners = vec![TcpListener::bind(format!(
+            "127.0.0.1:{}",
+            self.config.port
+        ))?];
 
-        for stream in listener.incoming() {
-            debug!("New connection");
-            let mut cloned_server = self.clone();
+        if self.https_config.is_some() {
+            listeners.push(TcpListener::bind("127.0.0.1:443".to_string())?);
+        }
+
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        for (index, listener) in listeners.into_iter().enumerate() {
+            let cloned_server = self.clone();
+            let tx = tx.clone();
             std::thread::spawn(move || {
-                match cloned_server.handle_connection(&mut stream.unwrap()) {
-                    Ok(_) => debug!("Connection closed"),
-                    Err(err) => info!("Connection error: {err:?}"),
+                for stream in listener.incoming() {
+                    debug!("New connection");
+                    let cloned_server = cloned_server.clone();
+                    std::thread::spawn(move || {
+                        match cloned_server.handle_connection(&mut stream.unwrap()) {
+                            Ok(_) => debug!("Connection closed"),
+                            Err(err) => info!("Connection error: {err:?}"),
+                        }
+                    });
                 }
+
+                tx.send(index).unwrap();
             });
         }
+
+        rx.recv().unwrap();
 
         Ok(())
     }
 
-    fn handle_connection(&mut self, stream: &mut TcpStream) -> Result<()> {
+    fn handle_connection(&self, stream: &mut TcpStream) -> Result<()> {
         let (persistent, max_requests) = match self.config.keep_alive {
             KeepAliveConfig::On {
                 timeout,
@@ -128,7 +148,7 @@ impl Server {
                 },
             };
 
-            if !response.is_some() {
+            if response.is_none() {
                 match &mut current_request {
                     None => {
                         let request = parse_request(request_bytes.as_slice());

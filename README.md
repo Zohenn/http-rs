@@ -14,7 +14,7 @@ A very noob attempt at writing code in Rust.
 - [x] keep-alive
 - [ ] binary compilation target that serves static files only and reads config from config file
 - [x] multithreading
-- [ ] allowing HTTPS and non-HTTPS traffic simultaneously
+- [x] allowing HTTPS and non-HTTPS traffic simultaneously
 
 ### mightdo
 - [ ] HTTP/2 support
