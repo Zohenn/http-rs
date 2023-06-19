@@ -140,3 +140,47 @@ pub fn parse_request(bytes: &[u8]) -> Result<Request> {
         body: bytes_iter.copied().collect(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    mod parse_request_line {
+        use crate::http_version::HttpVersion;
+        use crate::request::parse_request_line;
+        use crate::request_method::RequestMethod;
+        use std::error::Error;
+
+        fn msg_result(msg: &str) -> Result<(RequestMethod, String, HttpVersion), Box<dyn Error>> {
+            parse_request_line(&mut format!("{}\r\n\r\n", msg).as_bytes().iter())
+        }
+
+        #[test]
+        fn err_with_invalid_method() {
+            let result = msg_result("GET123 /index.html HTTP/1.1");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn err_with_empty_url() {
+            let result = msg_result("GET  HTTP/1.1");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn err_with_invalid_http_version() {
+            let result = msg_result("GET /index.html HTTP/12.34");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn err_with_whitespace_after_http_version() {
+            let result = msg_result("GET /index.html HTTP/1.1 ");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn err_with_malformed_msg() {
+            let result = msg_result("GET/index.htmlHTTP/1.1");
+            assert!(result.is_err());
+        }
+    }
+}
