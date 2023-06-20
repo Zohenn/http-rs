@@ -1,6 +1,6 @@
 use log::{debug, error};
 use rustls::IoState;
-use std::io::{ErrorKind, Read, Write};
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 

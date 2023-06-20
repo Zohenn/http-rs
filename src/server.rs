@@ -5,7 +5,6 @@ use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
 use crate::server_config::{KeepAliveConfig, ServerConfig};
 use log::{debug, info};
-use std::fmt::format;
 use std::fs;
 use std::io::{ErrorKind, Result};
 use std::net::{TcpListener, TcpStream};

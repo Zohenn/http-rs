@@ -183,4 +183,32 @@ mod tests {
             assert!(result.is_err());
         }
     }
+
+    mod parse_headers {
+        use crate::request::parse_headers;
+        use std::collections::HashMap;
+        use std::error::Error;
+
+        fn msg_result(msg: &str) -> Result<HashMap<String, String>, Box<dyn Error>> {
+            parse_headers(&mut format!("{}\r\n\r\n", msg).as_bytes().iter())
+        }
+
+        #[test]
+        fn err_with_whitespace_before_header_name() {
+            let result = msg_result("Content-Type : text/html\r\n  Content-Length: 123");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn err_with_whitespace_before_colon() {
+            let result = msg_result("Content-Type : text/html");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn err_with_non_numeric_value_when_numeric_expected() {
+            let result = msg_result("Content-Length: text/html");
+            assert!(result.is_err());
+        }
+    }
 }
