@@ -211,4 +211,43 @@ mod tests {
             assert!(result.is_err());
         }
     }
+
+    mod parse_request {
+        use crate::http_version::HttpVersion;
+        use crate::request::{parse_request, Request};
+        use crate::request_method::RequestMethod;
+        use std::collections::HashMap;
+        use std::error::Error;
+
+        static TEST_MESSAGE: &str =
+            "POST /index.html HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 3\r\n\r\n123";
+
+        fn msg_result(msg: &str) -> Result<Request, Box<dyn Error>> {
+            parse_request(msg.as_bytes())
+        }
+
+        #[test]
+        fn result_contains_request_line_info() {
+            let result = msg_result(TEST_MESSAGE).unwrap();
+            assert_eq!(result.method, RequestMethod::Post);
+            assert_eq!(result.url, "/index.html");
+            assert_eq!(result.version, HttpVersion::Http1_1);
+        }
+
+        #[test]
+        fn result_contains_headers() {
+            let result = msg_result(TEST_MESSAGE).unwrap();
+            let headers = HashMap::from([
+                ("Content-Type".to_string(), "text/plain".to_string()),
+                ("Content-Length".to_string(), "3".to_string()),
+            ]);
+            assert_eq!(result.headers, headers);
+        }
+
+        #[test]
+        fn leftover_bytes_copied_to_body() {
+            let result = msg_result(TEST_MESSAGE);
+            assert_eq!(result.unwrap().body, vec![b'1', b'2', b'3']);
+        }
+    }
 }
