@@ -10,8 +10,24 @@ pub enum ReadUntil {
     NoBytes(usize),
 }
 
+trait ReadWrite: Read + Write {
+    fn as_read_mut(&mut self) -> &mut dyn Read;
+
+    fn as_write_mut(&mut self) -> &mut dyn Write;
+}
+
+impl ReadWrite for TcpStream {
+    fn as_read_mut(&mut self) -> &mut dyn Read {
+        self
+    }
+
+    fn as_write_mut(&mut self) -> &mut dyn Write {
+        self
+    }
+}
+
 pub struct Connection<'a> {
-    stream: &'a mut TcpStream,
+    stream: &'a mut dyn ReadWrite,
     tls_connection: Option<rustls::ServerConnection>,
     persistent: bool,
 }
@@ -48,11 +64,13 @@ impl<'a> Connection<'a> {
             if let Some(tls_connection) = &mut self.tls_connection {
                 let mut read_plaintext_bytes = false;
                 while tls_connection.is_handshaking() {
-                    tls_connection.read_tls(self.stream)?;
+                    tls_connection.read_tls(self.stream.as_read_mut())?;
                     match &mut tls_connection.process_new_packets() {
                         Err(err) => {
                             error!("Handshake error: {err:?}");
-                            tls_connection.write_tls(self.stream).unwrap();
+                            tls_connection
+                                .write_tls(self.stream.as_write_mut())
+                                .unwrap();
                             return Ok(None);
                         }
                         Ok(state) => {
@@ -67,15 +85,17 @@ impl<'a> Connection<'a> {
                             }
                         }
                     }
-                    tls_connection.write_tls(self.stream)?;
+                    tls_connection.write_tls(self.stream.as_write_mut())?;
                 }
 
                 if !read_plaintext_bytes {
-                    tls_connection.read_tls(self.stream)?;
+                    tls_connection.read_tls(self.stream.as_read_mut())?;
                     match &mut tls_connection.process_new_packets() {
                         Err(err) => {
                             error!("Plaintext read error: {err:?}");
-                            tls_connection.write_tls(self.stream).unwrap();
+                            tls_connection
+                                .write_tls(self.stream.as_write_mut())
+                                .unwrap();
                             return Ok(None);
                         }
                         Ok(state) => {
@@ -87,7 +107,7 @@ impl<'a> Connection<'a> {
             } else {
                 loop {
                     let mut stream_buf: [u8; 255] = [0; 255];
-                    let read_length = self.stream.read(stream_buf.as_mut_slice())?;
+                    let read_length = self.stream.as_read_mut().read(stream_buf.as_mut_slice())?;
                     request_bytes.append(
                         &mut stream_buf
                             .into_iter()
@@ -144,10 +164,10 @@ impl<'a> Connection<'a> {
                 conn.send_close_notify();
             }
             while conn.wants_write() {
-                conn.write_tls(self.stream)?;
+                conn.write_tls(self.stream.as_write_mut())?;
             }
         } else {
-            self.stream.write_all(bytes)?;
+            self.stream.as_write_mut().write_all(bytes)?;
         }
 
         Ok(())
