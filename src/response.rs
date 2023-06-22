@@ -38,7 +38,7 @@ impl Response {
         self
     }
 
-    pub(crate) fn as_bytes(&mut self) -> Vec<u8> {
+    pub(crate) fn as_bytes(&self) -> Vec<u8> {
         let mut bytes: Vec<u8> = vec![];
 
         bytes.append(&mut self.version.as_bytes());
@@ -106,11 +106,52 @@ impl ResponseBuilder {
     pub fn text_body(mut self, body: &str) -> Self {
         self.response.body = body.as_bytes().to_vec();
 
-        let body_len = self.response.body.len();
-        self.header("Content-Length", &body_len.to_string())
+        self
     }
 
     pub fn get(self) -> Response {
+        if !self.response.body.is_empty() && !self.response.headers.contains_key("Content-Length") {
+            let len = self.response.body.len();
+            return self.header("Content-Length", &len.to_string()).response;
+        }
+
         self.response
+    }
+}
+
+#[cfg(test)]
+mod test {
+    mod response {
+        use crate::response::Response;
+        use crate::response_status_code::ResponseStatusCode;
+
+        #[test]
+        fn correct_as_bytes_representation() {
+            let response = Response::builder()
+                .status_code(ResponseStatusCode::Ok)
+                .header("Content-Type", "text/plain")
+                .body(vec![b'1', b'2', b'3'])
+                .get();
+            let bytes = response.as_bytes();
+            let response_str = std::str::from_utf8(&bytes).unwrap();
+
+            let mut found_body = false;
+            for (index, line) in response_str.split("\r\n").enumerate() {
+                if index == 0 {
+                    assert_eq!(line, "HTTP/1.1 200 OK");
+                } else if !found_body {
+                    if line.is_empty() {
+                        found_body = true;
+                        continue;
+                    }
+                    assert!(matches!(
+                        line,
+                        "Content-Type: text/plain" | "Content-Length: 3"
+                    ));
+                } else {
+                    assert_eq!(line, "123");
+                }
+            }
+        }
     }
 }
