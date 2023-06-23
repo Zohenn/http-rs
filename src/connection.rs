@@ -10,7 +10,7 @@ pub enum ReadUntil {
     NoBytes(usize),
 }
 
-trait ReadWrite: Read + Write {
+pub trait ReadWrite: Read + Write {
     fn as_read_mut(&mut self) -> &mut dyn Read;
 
     fn as_write_mut(&mut self) -> &mut dyn Write;
@@ -183,4 +183,99 @@ fn read_tls_plaintext_bytes(
     tls_connection.reader().read_exact(&mut buf)?;
 
     Ok(buf)
+}
+
+#[cfg(test)]
+mod test {
+    use crate::connection::{Connection, ReadUntil};
+    use crate::test::mocks::MockReadWrite;
+    use rand::RngCore;
+
+    fn get_rand_vec(len: usize) -> Vec<u8> {
+        let mut read_buf: Vec<u8> = Vec::new();
+        read_buf.resize(len, 0);
+        rand::thread_rng().fill_bytes(&mut read_buf);
+
+        read_buf
+    }
+
+    fn prepare_mock(read_buf_len: usize) -> MockReadWrite {
+        let mut read_buf: Vec<u8> = get_rand_vec(read_buf_len);
+        read_buf[read_buf_len - 4] = b'\r';
+        read_buf[read_buf_len - 3] = b'\n';
+        read_buf[read_buf_len - 2] = b'\r';
+        read_buf[read_buf_len - 1] = b'\n';
+        MockReadWrite {
+            read_buf,
+            write_buf: vec![],
+        }
+    }
+
+    #[test]
+    fn reads_all_bytes_until_double_crlf_at_end() {
+        let mut mock = prepare_mock(734);
+        let mut connection = Connection {
+            stream: &mut mock,
+            tls_connection: None,
+            persistent: false,
+        };
+
+        let read_bytes = connection.read(ReadUntil::DoubleCrLf).unwrap().unwrap();
+        assert_eq!(read_bytes.len(), 734);
+    }
+
+    #[test]
+    fn reads_all_bytes_until_double_crlf_mid_way() {
+        let mut mock = {
+            let mut read_buf: Vec<u8> = get_rand_vec(395);
+            read_buf[237] = b'\r';
+            read_buf[238] = b'\n';
+            read_buf[239] = b'\r';
+            read_buf[240] = b'\n';
+            MockReadWrite {
+                read_buf,
+                write_buf: vec![],
+            }
+        };
+        let mut connection = Connection {
+            stream: &mut mock,
+            tls_connection: None,
+            persistent: false,
+        };
+
+        let read_bytes = connection.read(ReadUntil::DoubleCrLf).unwrap().unwrap();
+        assert_eq!(read_bytes.len(), 395);
+    }
+
+    #[test]
+    fn reads_all_bytes_until_no_bytes() {
+        let mut mock = MockReadWrite {
+            read_buf: get_rand_vec(501),
+            write_buf: vec![],
+        };
+        let mut connection = Connection {
+            stream: &mut mock,
+            tls_connection: None,
+            persistent: false,
+        };
+
+        let read_bytes = connection.read(ReadUntil::NoBytes(501)).unwrap().unwrap();
+        assert_eq!(read_bytes.len(), 501);
+    }
+
+    #[test]
+    fn returns_empty_vec_if_read_nothing() {
+        let mut mock = MockReadWrite {
+            read_buf: vec![],
+            write_buf: vec![],
+        };
+        let mut connection = Connection {
+            stream: &mut mock,
+            tls_connection: None,
+            persistent: false,
+        };
+
+        let read_bytes = connection.read(ReadUntil::DoubleCrLf).unwrap().unwrap();
+        assert_eq!(read_bytes.len(), 0);
+    }
 }
