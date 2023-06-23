@@ -139,8 +139,7 @@ impl Server {
                 Err(err) => match err.kind() {
                     ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => return Ok(()),
                     ErrorKind::TimedOut => {
-                        response =
-                            Some(self.error_response(None, ResponseStatusCode::RequestTimeout));
+                        response = Some(error_response(None, ResponseStatusCode::RequestTimeout));
                         vec![]
                     }
                     _ => return Err(err),
@@ -160,16 +159,16 @@ impl Server {
                                 current_request = Some(request);
                             }
                         } else {
-                            response =
-                                Some(self.error_response(None, ResponseStatusCode::BadRequest));
+                            response = Some(error_response(None, ResponseStatusCode::BadRequest));
                         }
                     }
                     Some(request) => {
                         let length = request.content_length().unwrap();
                         if request_bytes.len() > length {
-                            response = Some(
-                                self.error_response(Some(request), ResponseStatusCode::BadRequest),
-                            );
+                            response = Some(error_response(
+                                Some(request),
+                                ResponseStatusCode::BadRequest,
+                            ));
                         } else {
                             request.body.extend(request_bytes);
                             response = Some(self.serve_content(request));
@@ -204,7 +203,7 @@ impl Server {
 
     fn prepare_response(&self, request: &Request) -> Response {
         if request.method == RequestMethod::Options && request.url == "*" {
-            self.options_response(request)
+            options_response(request)
         } else {
             self.serve_content(request)
         }
@@ -230,11 +229,10 @@ impl Server {
 
         if let Ok(content_bytes) = content {
             if !request.method.is_safe() {
-                return self
-                    .error_response(Some(request), ResponseStatusCode::MethodNotAllowed)
+                return error_response(Some(request), ResponseStatusCode::MethodNotAllowed)
                     .add_header("Allow", &RequestMethod::safe_methods_str());
             } else if request.method == RequestMethod::Options {
-                return self.options_response(request);
+                return options_response(request);
             }
 
             let mime_type = mime_guess::from_path(&request.url).first();
@@ -281,44 +279,145 @@ impl Server {
             }
         }
 
-        self.error_response(Some(request), ResponseStatusCode::NotFound)
+        error_response(Some(request), ResponseStatusCode::NotFound)
+    }
+}
+
+fn error_response(request: Option<&Request>, status_code: ResponseStatusCode) -> Response {
+    let mut response_builder = ResponseBuilder::new().status_code(status_code);
+
+    let accepts_html = if let Some(request) = request {
+        let accept_header = request.headers.get("Accept");
+        matches!(accept_header, Some(v) if v.contains("text/html") || v.contains("text/*") || v.contains("*/*"))
+    } else {
+        false
+    };
+
+    if accepts_html {
+        let text_body = format!(
+            "<html><body><h1 style='text-align: center'>{} {}</h1></body></html>",
+            status_code as u16, status_code
+        );
+        response_builder = response_builder
+            .header("Content-Type", "text/html; charset=utf-8")
+            .text_body(&text_body)
     }
 
-    fn error_response(
-        &self,
-        request: Option<&Request>,
-        status_code: ResponseStatusCode,
-    ) -> Response {
-        let mut response_builder = ResponseBuilder::new().status_code(status_code);
+    response_builder.get()
+}
 
-        let accepts_html = if let Some(request) = request {
-            let accept_header = request.headers.get("Accept");
-            matches!(accept_header, Some(v) if v.contains("text/html") || v.contains("text/*") || v.contains("*/*"))
-        } else {
-            false
-        };
+fn options_response(request: &Request) -> Response {
+    let mut response_builder = ResponseBuilder::new().status_code(ResponseStatusCode::NoContent);
 
-        if accepts_html {
-            let text_body = format!(
-                "<html><body><h1 style='text-align: center'>{} {}</h1></body></html>",
-                status_code as u16, status_code
+    if request.url != "*" {
+        response_builder = response_builder.header("Allow", &RequestMethod::safe_methods_str());
+    }
+
+    response_builder.get()
+}
+
+#[cfg(test)]
+mod test {
+    mod error_response {
+        use crate::http_version::HttpVersion;
+        use crate::request::Request;
+        use crate::request_method::RequestMethod;
+        use crate::response_status_code::ResponseStatusCode;
+        use crate::server::error_response;
+        use std::collections::HashMap;
+
+        fn get_request(accept: &str) -> Request {
+            Request {
+                method: RequestMethod::Get,
+                url: "/".to_string(),
+                version: HttpVersion::Http1_1,
+                headers: HashMap::from([("Accept".to_string(), accept.to_string())]),
+                body: vec![],
+            }
+        }
+
+        #[test]
+        fn empty_body_with_no_request() {
+            let response = error_response(None, ResponseStatusCode::NotFound);
+
+            assert_eq!(response.body().len(), 0);
+            assert_eq!(response.headers().get("Content-Length"), None);
+        }
+
+        #[test]
+        fn empty_body_if_does_not_accept_html() {
+            for accept in [
+                "text/javascript",
+                "image/webp",
+                "application/json, application/xml",
+            ] {
+                let response =
+                    error_response(Some(&get_request(accept)), ResponseStatusCode::NotFound);
+
+                assert_eq!(response.body().len(), 0);
+                assert_eq!(response.headers().get("Content-Length"), None);
+            }
+        }
+
+        #[test]
+        fn default_html_in_body_if_accepts_html() {
+            for accept in ["*/*", "text/html", "application/json, text/*"] {
+                let response =
+                    error_response(Some(&get_request(accept)), ResponseStatusCode::NotFound);
+
+                assert!(!response.body().is_empty());
+                assert!(response.headers().get("Content-Length").is_some());
+            }
+        }
+    }
+
+    mod options_response {
+        use crate::http_version::HttpVersion;
+        use crate::request::Request;
+        use crate::request_method::RequestMethod;
+        use crate::response_status_code::ResponseStatusCode;
+        use crate::server::options_response;
+        use std::collections::HashMap;
+
+        fn get_request(url: &str) -> Request {
+            Request {
+                method: RequestMethod::Options,
+                url: url.to_string(),
+                version: HttpVersion::Http1_1,
+                headers: HashMap::new(),
+                body: vec![],
+            }
+        }
+
+        #[test]
+        fn has_204_status_code() {
+            let response = options_response(&get_request("/"));
+
+            assert_eq!(response.status_code(), &ResponseStatusCode::NoContent);
+        }
+
+        #[test]
+        fn has_empty_body() {
+            let response = options_response(&get_request("/"));
+
+            assert_eq!(response.body().len(), 0);
+        }
+
+        #[test]
+        fn sets_allow_header_for_non_star_url() {
+            let response = options_response(&get_request("/a/b/index.html"));
+
+            assert_eq!(
+                response.headers().get("Allow"),
+                Some(&RequestMethod::safe_methods_str())
             );
-            response_builder = response_builder
-                .header("Content-Type", "text/html; charset=utf-8")
-                .text_body(&text_body)
         }
 
-        response_builder.get()
-    }
+        #[test]
+        fn does_not_set_allow_header_for_star_url() {
+            let response = options_response(&get_request("*"));
 
-    fn options_response(&self, request: &Request) -> Response {
-        let mut response_builder =
-            ResponseBuilder::new().status_code(ResponseStatusCode::NoContent);
-
-        if request.url != "*" {
-            response_builder = response_builder.header("Allow", &RequestMethod::safe_methods_str());
+            assert_eq!(response.headers().get("Allow"), None);
         }
-
-        response_builder.get()
     }
 }

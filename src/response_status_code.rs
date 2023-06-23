@@ -1,7 +1,7 @@
 use crate::utils::StringUtils;
 use std::fmt::{Debug, Display, Formatter};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[allow(dead_code)]
 // not every status code defined by the spec is here, but I don't care
 pub enum ResponseStatusCode {
