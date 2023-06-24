@@ -2,10 +2,14 @@ use rustls_pemfile::Item;
 use std::fs;
 use std::io::BufReader;
 
-#[derive(PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum KeepAliveConfig {
     Off,
-    On { max_requests: u8, timeout: u8, include_header: bool },
+    On {
+        max_requests: u8,
+        timeout: u8,
+        include_header: bool,
+    },
 }
 
 impl Default for KeepAliveConfig {

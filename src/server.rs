@@ -220,42 +220,7 @@ impl Server {
                 return options_response(request);
             }
 
-            let mime_type = mime_guess::from_path(&request.url).first();
-            let content_type = if let Some(mime) = mime_type {
-                let charset = if mime.type_() == "text" {
-                    "; charset=utf-8"
-                } else {
-                    ""
-                };
-                mime.essence_str().to_string() + charset
-            } else {
-                "application/octet-stream".to_string()
-            };
-
-            let mut builder = Response::builder()
-                .status_code(ResponseStatusCode::Ok)
-                .header("Content-Type", &content_type)
-                .header("Content-Length", &content_bytes.len().to_string());
-
-            if let KeepAliveConfig::On {
-                timeout,
-                max_requests,
-                include_header,
-            } = self.config.keep_alive
-            {
-                if include_header {
-                    builder = builder.header(
-                        "Keep-Alive",
-                        &format!("timeout={timeout}, max={max_requests}"),
-                    );
-                }
-            }
-
-            if request.method == RequestMethod::Get {
-                builder = builder.body(content_bytes);
-            }
-
-            return builder.get();
+            return content_response(request, content_bytes, self.config.keep_alive);
         }
 
         if let Some(listener) = &self.listener {
@@ -281,6 +246,50 @@ fn get_content(root: &str, content_path: &str) -> Result<Vec<u8>> {
     }
 
     fs::read(canonical_path)
+}
+
+fn content_response(
+    request: &Request,
+    content_bytes: Vec<u8>,
+    keep_alive_config: KeepAliveConfig,
+) -> Response {
+    let mime_type = mime_guess::from_path(&request.url).first();
+    let content_type = if let Some(mime) = mime_type {
+        let charset = if mime.type_() == "text" {
+            "; charset=utf-8"
+        } else {
+            ""
+        };
+        mime.essence_str().to_string() + charset
+    } else {
+        "application/octet-stream".to_string()
+    };
+
+    let mut builder = Response::builder()
+        .status_code(ResponseStatusCode::Ok)
+        .header("Content-Type", &content_type)
+        .header("Content-Length", &content_bytes.len().to_string());
+
+    if let KeepAliveConfig::On {
+        timeout,
+        max_requests,
+        include_header,
+    } = keep_alive_config
+    {
+        if include_header {
+            builder = builder.header(
+                "Keep-Alive",
+                &format!("timeout={timeout}, max={max_requests}"),
+            );
+        }
+    }
+
+    if request.method == RequestMethod::Get {
+        // todo: this is where content should actually be read
+        builder = builder.body(content_bytes);
+    }
+
+    builder.get()
 }
 
 fn error_response(request: Option<&Request>, status_code: ResponseStatusCode) -> Response {
@@ -338,6 +347,120 @@ mod test {
             assert!(
                 matches!(get_content("src", "/../Cargo.toml"), Err(e) if e.kind() == ErrorKind::PermissionDenied)
             );
+        }
+    }
+
+    mod content_response {
+        use crate::http_version::HttpVersion;
+        use crate::request::Request;
+        use crate::request_method::RequestMethod;
+        use crate::server::content_response;
+        use crate::server_config::KeepAliveConfig;
+        use std::collections::HashMap;
+
+        fn get_request(method: RequestMethod, url: &str) -> Request {
+            Request {
+                method,
+                url: url.to_string(),
+                version: HttpVersion::Http1_1,
+                headers: HashMap::new(),
+                body: vec![],
+            }
+        }
+
+        fn get_default_request(method: RequestMethod) -> Request {
+            get_request(method, "/index.html")
+        }
+
+        #[test]
+        fn adds_content_type_header() {
+            for (url, content_type) in [
+                ("/index.html", "text/html; charset=utf-8"),
+                ("/123", "application/octet-stream"),
+            ] {
+                let request = get_request(RequestMethod::Get, url);
+                let response = content_response(&request, vec![], KeepAliveConfig::Off);
+
+                assert_eq!(
+                    response.headers().get("Content-Type"),
+                    Some(&content_type.to_string())
+                );
+            }
+        }
+
+        #[test]
+        fn adds_content_length_header() {
+            let request = get_default_request(RequestMethod::Head);
+            let content_bytes = vec![b'1', b'2', b'3'];
+            let response = content_response(&request, content_bytes.clone(), KeepAliveConfig::Off);
+
+            assert_eq!(
+                response.headers().get("Content-Length"),
+                Some(&content_bytes.len().to_string())
+            );
+        }
+
+        #[test]
+        fn does_not_add_keep_alive_header_with_keep_alive_disabled() {
+            let request = get_default_request(RequestMethod::Get);
+            let response = content_response(&request, vec![], KeepAliveConfig::Off);
+
+            assert!(response.headers().get("Keep-Alive").is_none());
+        }
+
+        #[test]
+        fn does_not_add_keep_alive_header_with_keep_alive_include_header_false() {
+            let request = get_default_request(RequestMethod::Get);
+            let timeout = 123;
+            let max_requests = 231;
+            let response = content_response(
+                &request,
+                vec![],
+                KeepAliveConfig::On {
+                    timeout,
+                    max_requests,
+                    include_header: false,
+                },
+            );
+
+            assert!(response.headers().get("Keep-Alive").is_none());
+        }
+
+        #[test]
+        fn adds_keep_alive_header_with_keep_alive_include_header_true() {
+            let request = get_default_request(RequestMethod::Get);
+            let timeout = 123;
+            let max_requests = 231;
+            let response = content_response(
+                &request,
+                vec![],
+                KeepAliveConfig::On {
+                    timeout,
+                    max_requests,
+                    include_header: true,
+                },
+            );
+
+            assert_eq!(
+                response.headers().get("Keep-Alive").unwrap(),
+                &format!("timeout={timeout}, max={max_requests}")
+            );
+        }
+
+        #[test]
+        fn has_body_for_get_request() {
+            let request = get_default_request(RequestMethod::Get);
+            let response = content_response(&request, vec![b'1', b'2', b'3'], KeepAliveConfig::Off);
+
+            assert!(!response.body().is_empty());
+        }
+
+        #[test]
+        fn has_no_body_for_non_get_request() {
+            let request = get_default_request(RequestMethod::Post);
+            let response = content_response(&request, vec![b'1', b'2', b'3'], KeepAliveConfig::Off);
+
+            assert!(response.body().is_empty());
         }
     }
 
