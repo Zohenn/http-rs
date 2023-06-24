@@ -209,23 +209,8 @@ impl Server {
         }
     }
 
-    fn get_content(&self, request: &Request) -> Result<Vec<u8>> {
-        let root_path = Path::new(&self.config.root);
-        let path = root_path.join(request.url.strip_prefix('/').unwrap());
-        let canonical_root_path = fs::canonicalize(root_path)?;
-        let canonical_path = fs::canonicalize(path)?;
-
-        // Do this check so no smarty-pants tries to access files
-        // outside web root directory, e.g. with GET /../example_http.rs
-        if !canonical_path.starts_with(canonical_root_path) {
-            return Err(std::io::Error::from(ErrorKind::PermissionDenied));
-        }
-
-        fs::read(canonical_path)
-    }
-
     fn serve_content(&self, request: &Request) -> Response {
-        let content = self.get_content(request);
+        let content = get_content(&self.config.root, &request.url);
 
         if let Ok(content_bytes) = content {
             if !request.method.is_safe() {
@@ -283,6 +268,21 @@ impl Server {
     }
 }
 
+fn get_content(root: &str, content_path: &str) -> Result<Vec<u8>> {
+    let root_path = Path::new(root);
+    let path = root_path.join(content_path.trim_start_matches('/'));
+    let canonical_root_path = fs::canonicalize(root_path)?;
+    let canonical_path = fs::canonicalize(path)?;
+
+    // Do this check so no smarty-pants tries to access files
+    // outside web root directory, e.g. with GET /../example_http.rs
+    if !canonical_path.starts_with(canonical_root_path) {
+        return Err(std::io::Error::from(ErrorKind::PermissionDenied));
+    }
+
+    fs::read(canonical_path)
+}
+
 fn error_response(request: Option<&Request>, status_code: ResponseStatusCode) -> Response {
     let mut response_builder = ResponseBuilder::new().status_code(status_code);
 
@@ -318,6 +318,29 @@ fn options_response(request: &Request) -> Response {
 
 #[cfg(test)]
 mod test {
+    mod get_content {
+        // These tests are dumb but I'm not going to mock fs
+        use crate::server::get_content;
+        use std::io::ErrorKind;
+
+        #[test]
+        fn ok_if_file_exists() {
+            assert!(get_content(".", "Cargo.toml").is_ok());
+        }
+
+        #[test]
+        fn ok_if_file_does_not_exist() {
+            assert!(get_content(".", "Cargo.tomlllll").is_err());
+        }
+
+        #[test]
+        fn err_if_file_is_outside_root() {
+            assert!(
+                matches!(get_content("src", "/../Cargo.toml"), Err(e) if e.kind() == ErrorKind::PermissionDenied)
+            );
+        }
+    }
+
     mod error_response {
         use crate::http_version::HttpVersion;
         use crate::request::Request;
