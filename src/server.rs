@@ -341,13 +341,14 @@ mod test {
             init_https(&config);
         }
 
+        // Next 3 tests are most certainly not unit tests, but I'm not going to mock fs
+
         #[test]
         #[should_panic(expected = "private")]
         fn panic_if_could_not_load_key() {
             let config = ServerConfig {
                 https: true,
-                // well, yeah
-                cert_path: Some("./examples/keys/server.crt".to_string()),
+                cert_path: Some("./test_files/keys/server.crt".to_string()),
                 ..Default::default()
             };
             init_https(&config);
@@ -357,9 +358,8 @@ mod test {
         fn returns_config() {
             let config = ServerConfig {
                 https: true,
-                // well, yeah x2
-                cert_path: Some("./examples/keys/server.crt".to_string()),
-                key_path: Some("./examples/keys/server.key".to_string()),
+                cert_path: Some("./test_files/keys/server.crt".to_string()),
+                key_path: Some("./test_files/keys/server.key".to_string()),
                 ..Default::default()
             };
 
@@ -370,9 +370,8 @@ mod test {
         fn returns_none_if_https_is_disabled() {
             let config = ServerConfig {
                 https: false,
-                // well, yeah x3
-                cert_path: Some("./examples/keys/server.crt".to_string()),
-                key_path: Some("./examples/keys/server.key".to_string()),
+                cert_path: Some("./test_files/keys/server.crt".to_string()),
+                key_path: Some("./test_files/keys/server.key".to_string()),
                 ..Default::default()
             };
 
@@ -387,18 +386,18 @@ mod test {
 
         #[test]
         fn ok_if_file_exists() {
-            assert!(get_content(".", "Cargo.toml").is_ok());
+            assert!(get_content("test_files", "file.txt").is_ok());
         }
 
         #[test]
         fn ok_if_file_does_not_exist() {
-            assert!(get_content(".", "Cargo.tomlllll").is_err());
+            assert!(get_content("test_files", "0qhwe0t9h.txt").is_err());
         }
 
         #[test]
         fn err_if_file_is_outside_root() {
             assert!(
-                matches!(get_content("src", "/../Cargo.toml"), Err(e) if e.kind() == ErrorKind::PermissionDenied)
+                matches!(get_content("test_files/dir", "/../file.txt"), Err(e) if e.kind() == ErrorKind::PermissionDenied)
             );
         }
     }
