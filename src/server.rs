@@ -29,31 +29,6 @@ impl Server {
         }
     }
 
-    fn init_https(&mut self) {
-        if !self.config.https {
-            return;
-        }
-
-        let certs = self.config.load_certs();
-        let key = self.config.load_key();
-
-        if certs.is_empty() {
-            panic!("Specified file does not contain a valid certificate");
-        }
-
-        if key.is_none() {
-            panic!("Specified file does not contain a valid private key");
-        }
-
-        self.https_config = Some(Arc::new(
-            rustls::ServerConfig::builder()
-                .with_safe_defaults()
-                .with_no_client_auth()
-                .with_single_cert(certs, key.unwrap())
-                .unwrap(),
-        ));
-    }
-
     pub fn listener(
         mut self,
         listener: impl Fn(&Request) -> Option<Response> + Send + Sync + 'static,
@@ -64,7 +39,7 @@ impl Server {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        self.init_https();
+        self.https_config = init_https(&self.config);
 
         let mut listeners = vec![TcpListener::bind(format!(
             "127.0.0.1:{}",
@@ -233,6 +208,31 @@ impl Server {
     }
 }
 
+fn init_https(config: &ServerConfig) -> Option<Arc<rustls::ServerConfig>> {
+    if !config.https {
+        return None;
+    }
+
+    let certs = config.load_certs();
+    let key = config.load_key();
+
+    if certs.is_empty() {
+        panic!("Specified file does not contain a valid certificate");
+    }
+
+    if key.is_none() {
+        panic!("Specified file does not contain a valid private key");
+    }
+
+    Some(Arc::new(
+        rustls::ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(certs, key.unwrap())
+            .unwrap(),
+    ))
+}
+
 fn get_content(root: &str, content_path: &str) -> Result<Vec<u8>> {
     let root_path = Path::new(root);
     let path = root_path.join(content_path.trim_start_matches('/'));
@@ -327,6 +327,59 @@ fn options_response(request: &Request) -> Response {
 
 #[cfg(test)]
 mod test {
+    mod server_init_https {
+        use crate::server::init_https;
+        use crate::server_config::ServerConfig;
+
+        #[test]
+        #[should_panic(expected = "certificate")]
+        fn panic_if_could_not_load_certs() {
+            let config = ServerConfig {
+                https: true,
+                ..Default::default()
+            };
+            init_https(&config);
+        }
+
+        #[test]
+        #[should_panic(expected = "private")]
+        fn panic_if_could_not_load_key() {
+            let config = ServerConfig {
+                https: true,
+                // well, yeah
+                cert_path: Some("./examples/keys/server.crt".to_string()),
+                ..Default::default()
+            };
+            init_https(&config);
+        }
+
+        #[test]
+        fn returns_config() {
+            let config = ServerConfig {
+                https: true,
+                // well, yeah x2
+                cert_path: Some("./examples/keys/server.crt".to_string()),
+                key_path: Some("./examples/keys/server.key".to_string()),
+                ..Default::default()
+            };
+
+            assert!(init_https(&config).is_some());
+        }
+
+        #[test]
+        fn returns_none_if_https_is_disabled() {
+            let config = ServerConfig {
+                https: false,
+                // well, yeah x3
+                cert_path: Some("./examples/keys/server.crt".to_string()),
+                key_path: Some("./examples/keys/server.key".to_string()),
+                ..Default::default()
+            };
+
+            assert!(init_https(&config).is_none());
+        }
+    }
+
     mod get_content {
         // These tests are dumb but I'm not going to mock fs
         use crate::server::get_content;
