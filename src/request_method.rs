@@ -26,16 +26,26 @@ impl RequestMethod {
             RequestMethod::Head,
             RequestMethod::Options,
         ]
-            .iter()
-            .map(|m| m.to_string().to_uppercase())
-            .collect::<Vec<String>>()
-            .join(", ")
+        .iter()
+        .map(|m| m.to_string().to_uppercase())
+        .collect::<Vec<String>>()
+        .join(", ")
     }
 }
 
 impl Display for RequestMethod {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        let str_value = match self {
+            RequestMethod::Get => "GET",
+            RequestMethod::Head => "HEAD",
+            RequestMethod::Options => "OPTIONS",
+            RequestMethod::Post => "POST",
+            RequestMethod::Put => "PUT",
+            RequestMethod::Patch => "PATCH",
+            RequestMethod::Delete => "DELETE",
+        };
+
+        write!(f, "{}", str_value)
     }
 }
 

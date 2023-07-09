@@ -31,6 +31,24 @@ impl Request {
             .get("Content-Length")
             .map(|content_length_value| content_length_value.parse::<usize>().unwrap())
     }
+
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut str = format!("{} {} {}\r\n", self.method, self.url, self.version);
+
+        for (name, value) in &self.headers {
+            str += format!("{}: {}\r\n", name, value).as_str();
+        }
+
+        str += "\r\n";
+
+        let mut bytes = Vec::from(str);
+
+        if !self.body.is_empty() {
+            bytes.append(&mut self.body.clone());
+        }
+
+        bytes
+    }
 }
 
 impl fmt::Debug for Request {
