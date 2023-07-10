@@ -92,7 +92,12 @@ impl Server {
                 stream.set_read_timeout(Some(std::time::Duration::from_secs(timeout as u64)))?;
                 (true, max_requests)
             }
-            _ => (false, 0),
+            _ => {
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(
+                    self.config.timeout as u64,
+                )))?;
+                (false, 0)
+            }
         };
 
         let mut connection = Connection::new(stream, self.https_config.clone(), persistent);

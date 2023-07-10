@@ -29,6 +29,7 @@ pub struct ServerConfig {
     pub cert_path: Option<String>,
     pub key_path: Option<String>,
     pub keep_alive: KeepAliveConfig,
+    pub timeout: u8,
 }
 
 impl Default for ServerConfig {
@@ -40,6 +41,7 @@ impl Default for ServerConfig {
             cert_path: None,
             key_path: None,
             keep_alive: KeepAliveConfig::default(),
+            timeout: 10,
         }
     }
 }

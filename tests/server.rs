@@ -234,6 +234,7 @@ fn incomplete_request_timeout_408() {
 
     let mut config = default_server_config();
     config.keep_alive = KeepAliveConfig::Off;
+    config.timeout = 1;
 
     run_test(closure);
     run_test_with_config(config, closure);
