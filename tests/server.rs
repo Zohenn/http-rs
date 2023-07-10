@@ -1,3 +1,4 @@
+use crate::utils::panic_after;
 use http_rs::http_version::HttpVersion;
 use http_rs::request::Request;
 use http_rs::request_method::RequestMethod;
@@ -6,8 +7,12 @@ use http_rs::response_status_code::ResponseStatusCode;
 use http_rs::server::*;
 use http_rs::server_config::*;
 use std::collections::HashMap;
+use std::fs::File;
 use std::io::{Read, Result, Write};
 use std::net::TcpStream;
+use std::sync::Arc;
+
+mod utils;
 
 /**
   - tests:
@@ -17,15 +22,28 @@ use std::net::TcpStream;
 
 static DEFAULT_RESPONSE: &str = "Ok";
 
-fn setup() -> Server {
-    let config = ServerConfig {
-        keep_alive: KeepAliveConfig::Off,
+fn default_server_config() -> ServerConfig {
+    ServerConfig {
+        root: "test_files".to_string(),
+        keep_alive: KeepAliveConfig::On {
+            timeout: 1,
+            max_requests: 1,
+            include_header: true,
+        },
         ..Default::default()
-    };
+    }
+}
+
+fn setup(config: Option<ServerConfig>) -> Server {
+    let config = config.unwrap_or(default_server_config());
 
     let server = Server::new(Some(config));
 
     server.listener(|request| {
+        if request.url != "/" {
+            return None;
+        }
+
         let mut response_builder = Response::builder().status_code(ResponseStatusCode::Ok);
 
         if request.method == RequestMethod::Get {
@@ -39,13 +57,27 @@ fn setup() -> Server {
 }
 
 fn run_test(test: impl Fn()) {
-    std::thread::spawn(|| {
-        let mut server = setup();
+    let handle = std::thread::spawn(|| {
+        let mut server = setup(None);
 
-        server.run().expect("Server runs");
+        server.run(Arc::new(true)).expect("Server runs");
     });
 
     test();
+
+    handle.join().unwrap();
+}
+
+fn run_test_with_config(config: ServerConfig, test: impl Fn()) {
+    let handle = std::thread::spawn(|| {
+        let mut server = setup(Some(config));
+
+        server.run(Arc::new(true)).expect("Server runs");
+    });
+
+    test();
+
+    handle.join().unwrap();
 }
 
 fn default_get(url: &str) -> Request {
@@ -133,6 +165,29 @@ fn get_request() {
         let response = issue_req_request(&request).unwrap();
 
         assert_eq!(response.body(), "Ok".as_bytes());
+        assert_eq!(
+            response.headers().get("Connection"),
+            Some(&"close".to_string())
+        );
+    });
+}
+
+#[test]
+fn get_request_for_content() {
+    run_test(|| {
+        let request = default_get("/file.txt");
+
+        let response = issue_req_request(&request).unwrap();
+
+        let mut file = File::open("test_files/file.txt").unwrap();
+        let mut file_contents: Vec<u8> = vec![];
+        file.read_to_end(&mut file_contents).unwrap();
+
+        assert_eq!(response.body(), &file_contents);
+        assert_eq!(
+            response.headers().get("Content-Length"),
+            Some(&file_contents.len().to_string())
+        );
     });
 }
 
@@ -145,5 +200,41 @@ fn post_request() {
         let response = issue_req_request(&request).unwrap();
 
         assert_eq!(response.body(), &body);
+        assert_eq!(
+            response.headers().get("Content-Length"),
+            Some(&body.len().to_string())
+        );
     });
+}
+
+#[test]
+fn malformed_request_400() {
+    run_test(|| {
+        let request = "GET / HTTP/1.1Host: localhost\r\n\r\n";
+
+        let response = issue_str_request(request).unwrap();
+
+        assert_eq!(response.status_code(), &ResponseStatusCode::BadRequest);
+        assert!(response.body().is_empty());
+    });
+}
+
+#[test]
+fn incomplete_request_timeout_408() {
+    let closure = || {
+        panic_after(std::time::Duration::from_millis(1200), || {
+            let request = "GET / HTTP/1.1";
+
+            let response = issue_str_request(request).unwrap();
+
+            assert_eq!(response.status_code(), &ResponseStatusCode::RequestTimeout);
+            assert!(response.body().is_empty());
+        });
+    };
+
+    let mut config = default_server_config();
+    config.keep_alive = KeepAliveConfig::Off;
+
+    run_test(closure);
+    run_test_with_config(config, closure);
 }

@@ -4,7 +4,7 @@ use crate::request_method::RequestMethod;
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
 use crate::server_config::{KeepAliveConfig, ServerConfig};
-use log::{debug, info};
+use log::{debug, error, info};
 use std::fs;
 use std::io::{ErrorKind, Result};
 use std::net::{TcpListener, TcpStream};
@@ -38,7 +38,7 @@ impl Server {
         self
     }
 
-    pub fn run(&mut self) -> Result<()> {
+    pub fn run(&mut self, stop: Arc<bool>) -> Result<()> {
         self.https_config = init_https(&self.config);
 
         let mut listeners = vec![TcpListener::bind(format!(
@@ -55,6 +55,7 @@ impl Server {
         for (index, listener) in listeners.into_iter().enumerate() {
             let cloned_server = self.clone();
             let tx = tx.clone();
+            let stop = stop.clone();
             std::thread::spawn(move || {
                 for stream in listener.incoming() {
                     debug!("New connection");
@@ -65,6 +66,11 @@ impl Server {
                             Err(err) => info!("Connection error: {err:?}"),
                         }
                     });
+
+                    if *stop {
+                        debug!("Stopping listening for connections");
+                        break;
+                    }
                 }
 
                 tx.send(index).unwrap();
@@ -538,7 +544,7 @@ mod test {
         fn empty_body_with_no_request() {
             let response = error_response(None, ResponseStatusCode::NotFound);
 
-            assert_eq!(response.body().len(), 0);
+            assert!(response.body().is_empty());
             assert_eq!(response.headers().get("Content-Length"), None);
         }
 
@@ -552,7 +558,7 @@ mod test {
                 let response =
                     error_response(Some(&get_request(accept)), ResponseStatusCode::NotFound);
 
-                assert_eq!(response.body().len(), 0);
+                assert!(response.body().is_empty());
                 assert_eq!(response.headers().get("Content-Length"), None);
             }
         }

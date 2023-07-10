@@ -5,6 +5,7 @@ use http_rs::server_config::ServerConfigBuilder;
 use log::LevelFilter;
 use pretty_env_logger::env_logger::Target;
 use std::io::Result;
+use std::sync::Arc;
 
 fn main() -> Result<()> {
     pretty_env_logger::formatted_timed_builder()
@@ -48,5 +49,5 @@ fn main() -> Result<()> {
                     .get(),
             )
         })
-        .run()
+        .run(Arc::new(false))
 }
