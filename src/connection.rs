@@ -1,9 +1,12 @@
 use log::{debug, error};
 use rustls::IoState;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 
+type IoResult<S> = std::io::Result<S>;
+
+// todo: rename to ReadStrategy
 #[derive(Debug)]
 pub enum ReadUntil {
     DoubleCrLf,
@@ -26,15 +29,15 @@ impl ReadWrite for TcpStream {
     }
 }
 
-pub struct Connection<'a> {
-    stream: &'a mut dyn ReadWrite,
+pub struct Connection<'stream> {
+    stream: &'stream mut dyn ReadWrite,
     tls_connection: Option<rustls::ServerConnection>,
     persistent: bool,
 }
 
-impl<'a> Connection<'a> {
+impl<'stream> Connection<'stream> {
     pub fn new(
-        stream: &'a mut TcpStream,
+        stream: &'stream mut TcpStream,
         https_config: Option<Arc<rustls::ServerConfig>>,
         persistent: bool,
     ) -> Self {
@@ -56,107 +59,21 @@ impl<'a> Connection<'a> {
     }
 
     pub fn read(&mut self, read_until: ReadUntil) -> std::io::Result<Option<Vec<u8>>> {
-        let mut request_bytes: Vec<u8> = Vec::new();
+        let mut read_state_machine = ReadStateMachine::new(self, read_until);
 
         loop {
-            let prev_iter_len = request_bytes.len();
+            read_state_machine = read_state_machine.next();
 
-            if let Some(tls_connection) = &mut self.tls_connection {
-                let mut read_plaintext_bytes = false;
-                while tls_connection.is_handshaking() {
-                    tls_connection.read_tls(self.stream.as_read_mut())?;
-                    match &mut tls_connection.process_new_packets() {
-                        Err(err) => {
-                            error!("Handshake error: {err:?}");
-                            tls_connection
-                                .write_tls(self.stream.as_write_mut())
-                                .unwrap();
-                            return Ok(None);
-                        }
-                        Ok(state) => {
-                            debug!(
-                                "Handshaking state: {state:?}, {}",
-                                tls_connection.is_handshaking()
-                            );
-                            if state.plaintext_bytes_to_read() > 0 {
-                                request_bytes
-                                    .append(&mut read_tls_plaintext_bytes(tls_connection, state)?);
-                                read_plaintext_bytes = true;
-                            }
-                        }
-                    }
-                    tls_connection.write_tls(self.stream.as_write_mut())?;
-                }
-
-                if !read_plaintext_bytes {
-                    tls_connection.read_tls(self.stream.as_read_mut())?;
-                    match &mut tls_connection.process_new_packets() {
-                        Err(err) => {
-                            error!("Plaintext read error: {err:?}");
-                            tls_connection
-                                .write_tls(self.stream.as_write_mut())
-                                .unwrap();
-                            return Ok(None);
-                        }
-                        Ok(state) => {
-                            request_bytes
-                                .append(&mut read_tls_plaintext_bytes(tls_connection, state)?);
-                        }
-                    }
-                }
-            } else {
-                loop {
-                    let mut stream_buf: [u8; 255] = [0; 255];
-                    let read_length = self.stream.as_read_mut().read(stream_buf.as_mut_slice())?;
-                    request_bytes.append(
-                        &mut stream_buf
-                            .into_iter()
-                            .take(read_length)
-                            .collect::<Vec<u8>>(),
-                    );
-
-                    if read_length < stream_buf.len() {
-                        break;
-                    }
-
-                    stream_buf.fill(0);
-                }
-            }
-
-            // Fixes infinite loop when peer closes connection before whole HTTP message
-            // has been received. In such case read() returns nothing and this is the easier
-            // way to check if that's the case.
-            if request_bytes.len() == prev_iter_len {
-                break;
-            }
-
-            match read_until {
-                ReadUntil::DoubleCrLf => {
-                    let mut crlf_found = false;
-                    for bytes in request_bytes.windows(4) {
-                        if let [.., b'\r', b'\n', b'\r', b'\n'] = bytes {
-                            crlf_found = true;
-                            break;
-                        }
-                    }
-
-                    if crlf_found {
-                        break;
-                    }
-                }
-                ReadUntil::NoBytes(length) => {
-                    if request_bytes.len() >= length {
-                        break;
-                    }
-                }
+            match read_state_machine.state {
+                ReadState::Done => return Ok(Some(read_state_machine.read_bytes)),
+                ReadState::Error(kind) => return Err(kind.into()),
+                _ => {}
             }
         }
-
-        Ok(Some(request_bytes))
     }
 
     pub fn write(&mut self, bytes: &[u8]) -> std::io::Result<()> {
-        if let Some(conn) = &mut self.tls_connection {
+        if let Some(conn) = self.tls_connection.as_mut() {
             // todo: try not to set unlimited buffer size
             conn.set_buffer_limit(None);
             conn.writer().write_all(bytes)?;
@@ -183,6 +100,166 @@ fn read_tls_plaintext_bytes(
     tls_connection.reader().read_exact(&mut buf)?;
 
     Ok(buf)
+}
+
+#[derive(Copy, Clone)]
+enum ReadState {
+    Before,
+    Read,
+    TlsHandshake,
+    TlsRead,
+    After(usize),
+    Done,
+    Error(ErrorKind),
+}
+
+struct ReadStateMachine<'connection, 'stream> {
+    connection: &'connection mut Connection<'stream>,
+    read_strategy: ReadUntil,
+    read_bytes: Vec<u8>,
+    state: ReadState,
+}
+
+impl<'connection, 'stream> ReadStateMachine<'connection, 'stream> {
+    fn new(connection: &'connection mut Connection<'stream>, read_strategy: ReadUntil) -> Self {
+        ReadStateMachine {
+            connection,
+            read_strategy,
+            read_bytes: vec![],
+            state: ReadState::Before,
+        }
+    }
+
+    fn next(mut self) -> Self {
+        let next_state = match self.state {
+            ReadState::Before if self.connection.tls_connection.is_none() => ReadState::Read,
+            ReadState::Before => ReadState::TlsHandshake,
+            ReadState::Read => Self::map_error(self.read()),
+            ReadState::TlsHandshake => Self::map_error(self.tls_handshake()),
+            ReadState::TlsRead => Self::map_error(self.tls_read()),
+            ReadState::After(read_bytes) => self.check_if_finished(read_bytes),
+            ReadState::Done | ReadState::Error(_) => self.state,
+        };
+
+        self.set_state(next_state)
+    }
+
+    fn set_state(mut self, new_state: ReadState) -> Self {
+        self.state = new_state;
+
+        self
+    }
+
+    fn map_error(result: IoResult<ReadState>) -> ReadState {
+        match result {
+            Ok(state) => state,
+            Err(err) => ReadState::Error(err.kind()),
+        }
+    }
+
+    fn read(&mut self) -> IoResult<ReadState> {
+        let stream = &mut self.connection.stream;
+
+        let mut read_bytes: usize = 0;
+
+        loop {
+            let mut stream_buf = [0u8; 1024];
+            let read_length = stream.as_read_mut().read(stream_buf.as_mut_slice())?;
+            self.read_bytes.append(
+                &mut stream_buf
+                    .into_iter()
+                    .take(read_length)
+                    .collect::<Vec<u8>>(),
+            );
+
+            read_bytes += read_length;
+
+            if read_length < stream_buf.len() {
+                break;
+            }
+
+            stream_buf.fill(0);
+        }
+
+        Ok(ReadState::After(read_bytes))
+    }
+
+    fn tls_handshake(&mut self) -> IoResult<ReadState> {
+        let tls_connection = self.connection.tls_connection.as_mut().unwrap();
+        let stream = &mut self.connection.stream;
+
+        while tls_connection.is_handshaking() {
+            tls_connection.read_tls(stream.as_read_mut())?;
+            match &mut tls_connection.process_new_packets() {
+                Err(err) => {
+                    error!("Handshake error: {err:?}");
+                    tls_connection.write_tls(stream.as_write_mut())?;
+                    return Err(ErrorKind::Other.into());
+                }
+                Ok(state) => {
+                    debug!(
+                        "Handshaking state: {state:?}, {}",
+                        tls_connection.is_handshaking()
+                    );
+                    let bytes_to_read = state.plaintext_bytes_to_read();
+                    if bytes_to_read > 0 {
+                        self.read_bytes
+                            .append(&mut read_tls_plaintext_bytes(tls_connection, state)?);
+                        return Ok(ReadState::After(bytes_to_read));
+                    }
+                }
+            }
+            tls_connection.write_tls(stream.as_write_mut())?;
+        }
+
+        Ok(ReadState::TlsRead)
+    }
+
+    fn tls_read(&mut self) -> IoResult<ReadState> {
+        let tls_connection = self.connection.tls_connection.as_mut().unwrap();
+        let stream = &mut self.connection.stream;
+
+        tls_connection.read_tls(stream.as_read_mut())?;
+        match &mut tls_connection.process_new_packets() {
+            Err(err) => {
+                error!("Plaintext read error: {err:?}");
+                tls_connection.write_tls(stream.as_write_mut())?;
+                Err(ErrorKind::Other.into())
+            }
+            Ok(state) => {
+                let read_bytes = state.plaintext_bytes_to_read();
+                self.read_bytes
+                    .append(&mut read_tls_plaintext_bytes(tls_connection, state)?);
+                Ok(ReadState::After(read_bytes))
+            }
+        }
+    }
+
+    fn check_if_finished(&mut self, read_bytes: usize) -> ReadState {
+        // Fixes infinite loop when peer closes connection before whole HTTP message
+        // has been received. In such case read() returns nothing and this is the easier
+        // way to check if that's the case.
+        if read_bytes == 0 {
+            return ReadState::Done;
+        }
+
+        match self.read_strategy {
+            ReadUntil::DoubleCrLf => {
+                for bytes in self.read_bytes.windows(4) {
+                    if let [.., b'\r', b'\n', b'\r', b'\n'] = bytes {
+                        return ReadState::Done;
+                    }
+                }
+            }
+            ReadUntil::NoBytes(length) => {
+                if self.read_bytes.len() >= length {
+                    return ReadState::Done;
+                }
+            }
+        }
+
+        ReadState::Read
+    }
 }
 
 #[cfg(test)]
