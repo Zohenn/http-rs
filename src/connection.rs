@@ -57,14 +57,14 @@ impl<'stream> Connection<'stream> {
         }
     }
 
-    pub fn read(&mut self, read_strategy: ReadStrategy) -> std::io::Result<Option<Vec<u8>>> {
+    pub fn read(&mut self, read_strategy: ReadStrategy) -> std::io::Result<Vec<u8>> {
         let mut read_state_machine = ReadStateMachine::new(self, read_strategy);
 
         loop {
             read_state_machine = read_state_machine.next();
 
             match read_state_machine.state {
-                ReadState::Done => return Ok(Some(read_state_machine.read_bytes)),
+                ReadState::Done => return Ok(read_state_machine.read_bytes),
                 ReadState::Error(kind) => return Err(kind.into()),
                 _ => {}
             }
@@ -235,9 +235,6 @@ impl<'connection, 'stream> ReadStateMachine<'connection, 'stream> {
     }
 
     fn check_if_finished(&mut self, read_bytes: usize) -> ReadState {
-        // Fixes infinite loop when peer closes connection before whole HTTP message
-        // has been received. In such case read() returns nothing and this is the easier
-        // way to check if that's the case.
         if read_bytes == 0 {
             return ReadState::Done;
         }
@@ -296,10 +293,7 @@ mod test {
             persistent: false,
         };
 
-        let read_bytes = connection
-            .read(ReadStrategy::UntilDoubleCrlf)
-            .unwrap()
-            .unwrap();
+        let read_bytes = connection.read(ReadStrategy::UntilDoubleCrlf).unwrap();
         assert_eq!(read_bytes.len(), 734);
     }
 
@@ -322,10 +316,7 @@ mod test {
             persistent: false,
         };
 
-        let read_bytes = connection
-            .read(ReadStrategy::UntilDoubleCrlf)
-            .unwrap()
-            .unwrap();
+        let read_bytes = connection.read(ReadStrategy::UntilDoubleCrlf).unwrap();
         assert_eq!(read_bytes.len(), 395);
     }
 
@@ -343,7 +334,6 @@ mod test {
 
         let read_bytes = connection
             .read(ReadStrategy::UntilNoBytesRead(501))
-            .unwrap()
             .unwrap();
         assert_eq!(read_bytes.len(), 501);
     }
@@ -360,10 +350,7 @@ mod test {
             persistent: false,
         };
 
-        let read_bytes = connection
-            .read(ReadStrategy::UntilDoubleCrlf)
-            .unwrap()
-            .unwrap();
+        let read_bytes = connection.read(ReadStrategy::UntilDoubleCrlf).unwrap();
         assert_eq!(read_bytes.len(), 0);
     }
 }

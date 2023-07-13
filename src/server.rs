@@ -115,15 +115,11 @@ impl Server {
                 ReadStrategy::UntilDoubleCrlf
             };
             let request_bytes = match connection.read(read_strategy) {
-                Ok(None) => {
-                    debug!("Got none bytes");
-                    return Ok(());
-                }
-                Ok(Some(bytes)) if bytes.is_empty() => {
+                Ok(bytes) if bytes.is_empty() => {
                     debug!("Got empty message (TCP FIN, probably)");
                     return Ok(());
                 }
-                Ok(Some(bytes)) => bytes,
+                Ok(bytes) => bytes,
                 Err(err) => match err.kind() {
                     ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => return Ok(()),
                     ErrorKind::TimedOut => {
