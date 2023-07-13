@@ -1,4 +1,4 @@
-use crate::connection::{Connection, ReadUntil};
+use crate::connection::{Connection, ReadStrategy};
 use crate::request::{parse_request, Request};
 use crate::request_method::RequestMethod;
 use crate::response::{Response, ResponseBuilder};
@@ -107,12 +107,14 @@ impl Server {
         loop {
             let mut response: Option<Response> = None;
 
-            let read_until = if let Some(request) = &current_request {
-                ReadUntil::NoBytes(request.content_length().unwrap() - request.body.len())
+            let read_strategy = if let Some(request) = &current_request {
+                ReadStrategy::UntilNoBytesRead(
+                    request.content_length().unwrap() - request.body.len(),
+                )
             } else {
-                ReadUntil::DoubleCrLf
+                ReadStrategy::UntilDoubleCrlf
             };
-            let request_bytes = match connection.read(read_until) {
+            let request_bytes = match connection.read(read_strategy) {
                 Ok(None) => {
                     debug!("Got none bytes");
                     return Ok(());

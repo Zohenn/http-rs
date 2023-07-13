@@ -6,11 +6,10 @@ use std::sync::Arc;
 
 type IoResult<S> = std::io::Result<S>;
 
-// todo: rename to ReadStrategy
 #[derive(Debug)]
-pub enum ReadUntil {
-    DoubleCrLf,
-    NoBytes(usize),
+pub enum ReadStrategy {
+    UntilDoubleCrlf,
+    UntilNoBytesRead(usize),
 }
 
 pub trait ReadWrite: Read + Write {
@@ -58,8 +57,8 @@ impl<'stream> Connection<'stream> {
         }
     }
 
-    pub fn read(&mut self, read_until: ReadUntil) -> std::io::Result<Option<Vec<u8>>> {
-        let mut read_state_machine = ReadStateMachine::new(self, read_until);
+    pub fn read(&mut self, read_strategy: ReadStrategy) -> std::io::Result<Option<Vec<u8>>> {
+        let mut read_state_machine = ReadStateMachine::new(self, read_strategy);
 
         loop {
             read_state_machine = read_state_machine.next();
@@ -115,13 +114,13 @@ enum ReadState {
 
 struct ReadStateMachine<'connection, 'stream> {
     connection: &'connection mut Connection<'stream>,
-    read_strategy: ReadUntil,
+    read_strategy: ReadStrategy,
     read_bytes: Vec<u8>,
     state: ReadState,
 }
 
 impl<'connection, 'stream> ReadStateMachine<'connection, 'stream> {
-    fn new(connection: &'connection mut Connection<'stream>, read_strategy: ReadUntil) -> Self {
+    fn new(connection: &'connection mut Connection<'stream>, read_strategy: ReadStrategy) -> Self {
         ReadStateMachine {
             connection,
             read_strategy,
@@ -244,14 +243,14 @@ impl<'connection, 'stream> ReadStateMachine<'connection, 'stream> {
         }
 
         match self.read_strategy {
-            ReadUntil::DoubleCrLf => {
+            ReadStrategy::UntilDoubleCrlf => {
                 for bytes in self.read_bytes.windows(4) {
                     if let [.., b'\r', b'\n', b'\r', b'\n'] = bytes {
                         return ReadState::Done;
                     }
                 }
             }
-            ReadUntil::NoBytes(length) => {
+            ReadStrategy::UntilNoBytesRead(length) => {
                 if self.read_bytes.len() >= length {
                     return ReadState::Done;
                 }
@@ -264,7 +263,7 @@ impl<'connection, 'stream> ReadStateMachine<'connection, 'stream> {
 
 #[cfg(test)]
 mod test {
-    use crate::connection::{Connection, ReadUntil};
+    use crate::connection::{Connection, ReadStrategy};
     use crate::test::mocks::MockReadWrite;
     use rand::RngCore;
 
@@ -297,7 +296,10 @@ mod test {
             persistent: false,
         };
 
-        let read_bytes = connection.read(ReadUntil::DoubleCrLf).unwrap().unwrap();
+        let read_bytes = connection
+            .read(ReadStrategy::UntilDoubleCrlf)
+            .unwrap()
+            .unwrap();
         assert_eq!(read_bytes.len(), 734);
     }
 
@@ -320,7 +322,10 @@ mod test {
             persistent: false,
         };
 
-        let read_bytes = connection.read(ReadUntil::DoubleCrLf).unwrap().unwrap();
+        let read_bytes = connection
+            .read(ReadStrategy::UntilDoubleCrlf)
+            .unwrap()
+            .unwrap();
         assert_eq!(read_bytes.len(), 395);
     }
 
@@ -336,7 +341,10 @@ mod test {
             persistent: false,
         };
 
-        let read_bytes = connection.read(ReadUntil::NoBytes(501)).unwrap().unwrap();
+        let read_bytes = connection
+            .read(ReadStrategy::UntilNoBytesRead(501))
+            .unwrap()
+            .unwrap();
         assert_eq!(read_bytes.len(), 501);
     }
 
@@ -352,7 +360,10 @@ mod test {
             persistent: false,
         };
 
-        let read_bytes = connection.read(ReadUntil::DoubleCrLf).unwrap().unwrap();
+        let read_bytes = connection
+            .read(ReadStrategy::UntilDoubleCrlf)
+            .unwrap()
+            .unwrap();
         assert_eq!(read_bytes.len(), 0);
     }
 }
