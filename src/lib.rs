@@ -2,6 +2,7 @@ mod connection;
 mod header;
 mod test;
 mod token;
+mod types;
 mod utils;
 
 pub mod http_version;

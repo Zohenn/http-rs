@@ -1,10 +1,9 @@
+use crate::types::IoResult;
 use log::{debug, error};
 use rustls::IoState;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
-
-type IoResult<S> = std::io::Result<S>;
 
 #[derive(Debug)]
 pub enum ReadStrategy {

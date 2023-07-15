@@ -4,9 +4,10 @@ use crate::request_method::RequestMethod;
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
 use crate::server_config::{KeepAliveConfig, ServerConfig};
-use log::{debug, error, info};
+use crate::types::IoResult;
+use log::{debug, info};
 use std::fs;
-use std::io::{ErrorKind, Result};
+use std::io::ErrorKind;
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::Arc;
@@ -38,7 +39,7 @@ impl Server {
         self
     }
 
-    pub fn run(&mut self, stop: Arc<bool>) -> Result<()> {
+    pub fn run(&mut self, stop: Arc<bool>) -> IoResult<()> {
         self.https_config = init_https(&self.config);
 
         let mut listeners = vec![TcpListener::bind(format!(
@@ -82,7 +83,7 @@ impl Server {
         Ok(())
     }
 
-    fn handle_connection(&self, stream: &mut TcpStream) -> Result<()> {
+    fn handle_connection(&self, stream: &mut TcpStream) -> IoResult<()> {
         let (persistent, max_requests) = match self.config.keep_alive {
             KeepAliveConfig::On {
                 timeout,
@@ -101,86 +102,17 @@ impl Server {
         };
 
         let mut connection = Connection::new(stream, self.https_config.clone(), persistent);
-        let mut served_requests_count = 0u8;
-        let mut current_request: Option<Request> = None;
+
+        let mut state = HandleConnectionState::New;
+        let mut state_machine =
+            HandleConnectionStateMachine::new(self, &mut connection, persistent, max_requests);
 
         loop {
-            let mut response: Option<Response> = None;
-
-            let read_strategy = if let Some(request) = &current_request {
-                ReadStrategy::UntilNoBytesRead(
-                    request.content_length().unwrap() - request.body.len(),
-                )
-            } else {
-                ReadStrategy::UntilDoubleCrlf
-            };
-            let request_bytes = match connection.read(read_strategy) {
-                Ok(bytes) if bytes.is_empty() => {
-                    debug!("Got empty message (TCP FIN, probably)");
-                    return Ok(());
-                }
-                Ok(bytes) => bytes,
-                Err(err) => match err.kind() {
-                    ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => return Ok(()),
-                    ErrorKind::TimedOut => {
-                        response = Some(error_response(None, ResponseStatusCode::RequestTimeout));
-                        vec![]
-                    }
-                    _ => return Err(err),
-                },
-            };
-
-            if response.is_none() {
-                match &mut current_request {
-                    None => {
-                        let request = parse_request(request_bytes.as_slice());
-                        if let Ok(request) = request {
-                            let has_body = matches!(request.content_length(), Some(length) if !(request.body.len() == length || length == 0));
-
-                            if !has_body {
-                                response = Some(self.prepare_response(&request));
-                            } else {
-                                current_request = Some(request);
-                            }
-                        } else {
-                            response = Some(error_response(None, ResponseStatusCode::BadRequest));
-                        }
-                    }
-                    Some(request) => {
-                        let length = request.content_length().unwrap();
-                        if request_bytes.len() > length {
-                            response = Some(error_response(
-                                Some(request),
-                                ResponseStatusCode::BadRequest,
-                            ));
-                        } else {
-                            request.body.extend(request_bytes);
-                            response = Some(self.serve_content(request));
-                        }
-                    }
-                }
-            }
-
-            if let Some(response) = response {
-                let mut response = response;
-                let should_close = !persistent
-                    || served_requests_count == max_requests - 1
-                    || current_request
-                        .as_ref()
-                        .is_some_and(|request| request.has_header("Connection", Some("close")));
-
-                if should_close {
-                    response = response.add_header("Connection", "close");
-                }
-
-                connection.write(&response.as_bytes())?;
-
-                current_request = None;
-                served_requests_count += 1;
-
-                if should_close {
-                    return Ok(());
-                }
+            state = state_machine.next(state);
+            match state {
+                HandleConnectionState::Close => return Ok(()),
+                HandleConnectionState::Error(err) => return Err(err.into()),
+                _ => {}
             }
         }
     }
@@ -242,7 +174,153 @@ fn init_https(config: &ServerConfig) -> Option<Arc<rustls::ServerConfig>> {
     ))
 }
 
-fn get_content(root: &str, content_path: &str) -> Result<Vec<u8>> {
+enum HandleConnectionState {
+    New,
+    Read(Option<Request>),
+    SendResponse(Option<Request>, Response),
+    ClientError(Option<Request>, ResponseStatusCode),
+    Close,
+    Error(ErrorKind),
+}
+
+struct HandleConnectionStateMachine<'server, 'connection, 'stream> {
+    server: &'server Server,
+    connection: &'connection mut Connection<'stream>,
+    persistent: bool,
+    max_requests: u8,
+    served_requests_count: u8,
+}
+
+impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'connection, 'stream> {
+    fn new(
+        server: &'server Server,
+        connection: &'connection mut Connection<'stream>,
+        persistent: bool,
+        max_requests: u8,
+    ) -> Self {
+        HandleConnectionStateMachine {
+            server,
+            connection,
+            persistent,
+            max_requests,
+            served_requests_count: 0u8,
+        }
+    }
+
+    fn next(&mut self, state: HandleConnectionState) -> HandleConnectionState {
+        let new_state: HandleConnectionState = match state {
+            HandleConnectionState::New => HandleConnectionState::Read(None),
+            HandleConnectionState::Read(current_request) => self.read(current_request),
+            HandleConnectionState::SendResponse(request, response) => {
+                self.send_response(request, response)
+            }
+            HandleConnectionState::ClientError(request, status_code) => {
+                self.client_error(request, status_code)
+            }
+            HandleConnectionState::Close | HandleConnectionState::Error(_) => state,
+        };
+
+        new_state
+    }
+
+    fn read(&mut self, current_request: Option<Request>) -> HandleConnectionState {
+        let read_strategy = if let Some(request) = &current_request {
+            ReadStrategy::UntilNoBytesRead(request.content_length().unwrap() - request.body.len())
+        } else {
+            ReadStrategy::UntilDoubleCrlf
+        };
+
+        let request_bytes = match self.connection.read(read_strategy) {
+            Ok(bytes) if bytes.is_empty() => {
+                debug!("Got empty message (TCP FIN, probably)");
+                return HandleConnectionState::Close;
+            }
+            Ok(bytes) => bytes,
+            Err(err) => {
+                return match err.kind() {
+                    ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => {
+                        HandleConnectionState::Close
+                    }
+                    ErrorKind::TimedOut => {
+                        HandleConnectionState::ClientError(None, ResponseStatusCode::RequestTimeout)
+                    }
+                    _ => HandleConnectionState::Error(err.kind()),
+                }
+            }
+        };
+
+        return match current_request {
+            None => {
+                let request = parse_request(request_bytes.as_slice());
+                if let Ok(request) = request {
+                    let has_body = matches!(request.content_length(), Some(length) if !(request.body.len() == length || length == 0));
+
+                    if !has_body {
+                        let response = self.server.prepare_response(&request);
+                        HandleConnectionState::SendResponse(Some(request), response)
+                    } else {
+                        HandleConnectionState::Read(Some(request))
+                    }
+                } else {
+                    HandleConnectionState::ClientError(None, ResponseStatusCode::BadRequest)
+                }
+            }
+            Some(mut request) => {
+                let length = request.content_length().unwrap();
+                if request_bytes.len() > length {
+                    HandleConnectionState::ClientError(
+                        Some(request),
+                        ResponseStatusCode::BadRequest,
+                    )
+                } else {
+                    request.body.extend(request_bytes);
+                    let response = self.server.serve_content(&request);
+                    HandleConnectionState::SendResponse(Some(request), response)
+                }
+            }
+        };
+    }
+
+    fn send_response(
+        &mut self,
+        request: Option<Request>,
+        mut response: Response,
+    ) -> HandleConnectionState {
+        let should_close = !self.persistent
+            || self.served_requests_count == self.max_requests - 1
+            || request
+                .as_ref()
+                .is_some_and(|request| request.has_header("Connection", Some("close")));
+
+        if should_close {
+            response = response.add_header("Connection", "close");
+        }
+
+        match self.connection.write(&response.as_bytes()) {
+            Ok(_) => {}
+            Err(err) => return HandleConnectionState::Error(err.kind()),
+        }
+
+        self.served_requests_count += 1;
+
+        if should_close {
+            HandleConnectionState::Close
+        } else {
+            HandleConnectionState::Read(None)
+        }
+    }
+
+    fn client_error(
+        &mut self,
+        request: Option<Request>,
+        status_code: ResponseStatusCode,
+    ) -> HandleConnectionState {
+        let response = error_response(request.as_ref(), status_code);
+        HandleConnectionState::SendResponse(request, response)
+    }
+}
+
+fn get_content(root: &str, content_path: &str) -> IoResult<Vec<u8>> {
     let root_path = Path::new(root);
     let path = root_path.join(content_path.trim_start_matches('/'));
     let canonical_root_path = fs::canonicalize(root_path)?;
