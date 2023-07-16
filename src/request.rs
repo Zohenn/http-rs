@@ -2,6 +2,7 @@ use crate::header::is_header_valid;
 use crate::http_version::HttpVersion;
 use crate::request_method::RequestMethod;
 use crate::utils::{skip_whitespace, IteratorUtils, StringUtils};
+use log::debug;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
@@ -167,20 +168,28 @@ fn parse_headers<'a>(
     }
 }
 
-pub fn parse_chunked_body(body: Vec<u8>) -> Result<Vec<u8>> {
+pub fn parse_chunked_body(body: Vec<u8>) -> Result<(Vec<u8>, bool)> {
     let mut parsed: Vec<u8> = vec![];
     let mut iterator = body.iter();
 
     loop {
         let mut peekable_iterator = iterator.by_ref().peekable();
+
+        if peekable_iterator.peek().is_none() {
+            debug!("Returning incomplete chunked body");
+            return Ok((parsed, false));
+        }
+
         let chunk_len_bytes = take_until_crlf(&mut peekable_iterator)?;
         let chunk_len_str = std::str::from_utf8(&chunk_len_bytes)?;
         let chunk_len = chunk_len_str.parse::<usize>()?;
 
         if peekable_iterator.peek().is_none() {
-            return Err("Incorrect chunked body".into());
+            return Err("Incorrect chunked body structure".into());
         }
 
+        // todo: this must not take all bytes until crlf, rather chunk_len bytes and then make sure
+        // that the next 2 bytes ar crlf
         let mut chunk_bytes = take_until_crlf(&mut peekable_iterator)?;
 
         if chunk_bytes.len() != chunk_len {
@@ -188,14 +197,14 @@ pub fn parse_chunked_body(body: Vec<u8>) -> Result<Vec<u8>> {
         }
 
         if chunk_len == 0 {
-            return Ok(parsed);
+            return Ok((parsed, true));
         } else {
             parsed.append(&mut chunk_bytes);
         }
     }
 }
 
-pub fn parse_request(bytes: &[u8]) -> Result<Request> {
+pub fn parse_request(bytes: &[u8]) -> Result<(Request, bool)> {
     let mut bytes_iter = bytes.iter();
     let (method, url, version) = parse_request_line(bytes_iter.by_ref())?;
     let headers = parse_headers(bytes_iter.by_ref())?;
@@ -208,17 +217,20 @@ pub fn parse_request(bytes: &[u8]) -> Result<Request> {
         body: vec![],
     };
 
+    let mut is_complete = false;
+
     match request.body_type() {
         RequestBodyType::ContentLength => {
             request.body = bytes_iter.copied().collect();
+            is_complete = request.body.len() == request.content_length().unwrap();
         }
         RequestBodyType::TransferEncodingChunked => {
-            request.body = parse_chunked_body(bytes_iter.copied().collect())?;
+            (request.body, is_complete) = parse_chunked_body(bytes_iter.copied().collect())?;
         }
-        RequestBodyType::None => {}
+        RequestBodyType::None => is_complete = true,
     }
 
-    Ok(request)
+    Ok((request, is_complete))
 }
 
 #[cfg(test)]
@@ -303,7 +315,7 @@ mod tests {
             "POST /index.html HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 3\r\n\r\n123";
 
         fn msg_result(msg: &str) -> Result<Request, Box<dyn Error>> {
-            parse_request(msg.as_bytes())
+            parse_request(msg.as_bytes()).map(|v| v.0)
         }
 
         #[test]

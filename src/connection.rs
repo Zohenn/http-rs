@@ -8,6 +8,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub enum ReadStrategy {
     UntilDoubleCrlf,
+    UntilDoubleCrlfAtEnd,
     UntilNoBytesRead(usize),
 }
 
@@ -176,7 +177,7 @@ impl<'connection, 'stream> ReadStateMachine<'connection, 'stream> {
                 break;
             }
 
-            stream_buf.fill(0);
+            stream_buf.fill(0); // todo: why? stream_buf has loop scope
         }
 
         Ok(ReadState::After(read_bytes))
@@ -244,6 +245,11 @@ impl<'connection, 'stream> ReadStateMachine<'connection, 'stream> {
                     if let [.., b'\r', b'\n', b'\r', b'\n'] = bytes {
                         return ReadState::Done;
                     }
+                }
+            }
+            ReadStrategy::UntilDoubleCrlfAtEnd => {
+                if let [.., b'\r', b'\n', b'\r', b'\n'] = self.read_bytes[..] {
+                    return ReadState::Done;
                 }
             }
             ReadStrategy::UntilNoBytesRead(length) => {

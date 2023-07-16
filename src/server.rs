@@ -1,5 +1,5 @@
 use crate::connection::{Connection, ReadStrategy};
-use crate::request::{parse_request, Request, RequestBodyType};
+use crate::request::{parse_chunked_body, parse_request, Request, RequestBodyType};
 use crate::request_method::RequestMethod;
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
@@ -225,7 +225,13 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
 
     fn read(&mut self, current_request: Option<Request>) -> HandleConnectionState {
         let read_strategy = if let Some(request) = &current_request {
-            ReadStrategy::UntilNoBytesRead(request.content_length().unwrap() - request.body.len())
+            match request.body_type() {
+                RequestBodyType::ContentLength => ReadStrategy::UntilNoBytesRead(
+                    request.content_length().unwrap() - request.body.len(),
+                ),
+                RequestBodyType::TransferEncodingChunked => ReadStrategy::UntilDoubleCrlfAtEnd,
+                RequestBodyType::None => unreachable!(),
+            }
         } else {
             ReadStrategy::UntilDoubleCrlf
         };
@@ -252,37 +258,62 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
         return match current_request {
             None => {
                 let request = parse_request(request_bytes.as_slice());
-                if let Ok(request) = request {
-                    let has_body = match request.body_type() {
-                        RequestBodyType::ContentLength => {
-                            matches!(request.content_length(), Some(length) if !(request.body.len() == length || length == 0))
-                        }
-                        RequestBodyType::TransferEncodingChunked => false, // todo: this won't work if not all chunks have but transfered at this point
-                        RequestBodyType::None => false,
-                    };
+                match request {
+                    Ok((request, is_request_complete)) => {
+                        let has_body = match request.body_type() {
+                            RequestBodyType::ContentLength => {
+                                matches!(request.content_length(), Some(length) if !(request.body.len() == length || length == 0))
+                            }
+                            RequestBodyType::TransferEncodingChunked => !is_request_complete,
+                            RequestBodyType::None => false,
+                        };
 
-                    if !has_body {
-                        let response = self.server.prepare_response(&request);
-                        HandleConnectionState::SendResponse(Some(request), response)
-                    } else {
-                        HandleConnectionState::Read(Some(request))
+                        // todo: this probably can be changed to is_request_complete
+                        if !has_body {
+                            let response = self.server.prepare_response(&request);
+                            HandleConnectionState::SendResponse(Some(request), response)
+                        } else {
+                            HandleConnectionState::Read(Some(request))
+                        }
                     }
-                } else {
-                    HandleConnectionState::ClientError(None, ResponseStatusCode::BadRequest)
+                    Err(err) => {
+                        debug!("Parse request error: {err:?}");
+                        HandleConnectionState::ClientError(None, ResponseStatusCode::BadRequest)
+                    }
                 }
             }
             Some(mut request) => {
-                let length = request.content_length().unwrap();
-                if request_bytes.len() > length {
-                    HandleConnectionState::ClientError(
+                if matches!(request.body_type(), RequestBodyType::ContentLength)
+                    && request_bytes.len() > request.content_length().unwrap()
+                {
+                    return HandleConnectionState::ClientError(
                         Some(request),
                         ResponseStatusCode::BadRequest,
-                    )
-                } else {
-                    request.body.extend(request_bytes);
-                    let response = self.server.serve_content(&request);
-                    HandleConnectionState::SendResponse(Some(request), response)
+                    );
                 }
+
+                let mut request_bytes = request_bytes;
+
+                if matches!(
+                    request.body_type(),
+                    RequestBodyType::TransferEncodingChunked
+                ) {
+                    let Ok((body, is_complete)) = parse_chunked_body(request_bytes) else {
+                        return HandleConnectionState::ClientError(Some(request), ResponseStatusCode::BadRequest);
+                    };
+
+                    // not sure if there will ever be a case when is_complete is false
+                    if !is_complete {
+                        return HandleConnectionState::Read(Some(request));
+                    }
+
+                    request_bytes = body;
+                }
+
+                request.body.extend(request_bytes);
+
+                let response = self.server.serve_content(&request);
+                HandleConnectionState::SendResponse(Some(request), response)
             }
         };
     }
