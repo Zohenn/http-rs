@@ -239,3 +239,15 @@ fn incomplete_request_timeout_408() {
     run_test(closure);
     run_test_with_config(config, closure);
 }
+
+#[test]
+fn handles_transfer_encoding_chunked() {
+    run_test(|| {
+        let request = "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3\r\n123\r\n5\r\n45678\r\n0\r\n\r\n";
+
+        let response = issue_str_request(request).unwrap();
+
+        assert_eq!(response.status_code(), &ResponseStatusCode::Ok);
+        assert_eq!(std::str::from_utf8(response.body()).unwrap(), "12345678");
+    });
+}

@@ -1,5 +1,5 @@
 use crate::connection::{Connection, ReadStrategy};
-use crate::request::{parse_request, Request};
+use crate::request::{parse_request, Request, RequestBodyType};
 use crate::request_method::RequestMethod;
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
@@ -253,7 +253,13 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
             None => {
                 let request = parse_request(request_bytes.as_slice());
                 if let Ok(request) = request {
-                    let has_body = matches!(request.content_length(), Some(length) if !(request.body.len() == length || length == 0));
+                    let has_body = match request.body_type() {
+                        RequestBodyType::ContentLength => {
+                            matches!(request.content_length(), Some(length) if !(request.body.len() == length || length == 0))
+                        }
+                        RequestBodyType::TransferEncodingChunked => false, // todo: this won't work if not all chunks have but transfered at this point
+                        RequestBodyType::None => false,
+                    };
 
                     if !has_body {
                         let response = self.server.prepare_response(&request);

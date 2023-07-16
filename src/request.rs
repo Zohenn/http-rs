@@ -9,6 +9,13 @@ use std::str::FromStr;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+#[derive(Debug)]
+pub enum RequestBodyType {
+    None,
+    ContentLength,
+    TransferEncodingChunked,
+}
+
 pub struct Request {
     pub method: RequestMethod,
     pub url: String,
@@ -18,6 +25,11 @@ pub struct Request {
 }
 
 impl Request {
+    // todo: this should be case insensitive, at least for header names
+    // Probably requires HashMap<String, String> to be changed to Vec<(String, String)>,
+    // and then using string.eq_ignore_ascii_case() when iterating the vector to find given header.
+    // Vec can be used as there will be at most 30-40 headers per request, usually much less,
+    // so it will probably be even faster than HashMap that has constant lookup times
     pub fn has_header(&self, header_name: &str, header_value: Option<&str>) -> bool {
         match (self.headers.get(header_name), header_value) {
             (Some(value), Some(header_value)) => header_value == value,
@@ -30,6 +42,16 @@ impl Request {
         self.headers
             .get("Content-Length")
             .map(|content_length_value| content_length_value.parse::<usize>().unwrap())
+    }
+
+    pub fn body_type(&self) -> RequestBodyType {
+        if let Some(_length) = self.content_length() {
+            RequestBodyType::ContentLength
+        } else if self.has_header("Transfer-Encoding", Some("chunked")) {
+            RequestBodyType::TransferEncodingChunked
+        } else {
+            RequestBodyType::None
+        }
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
@@ -145,18 +167,58 @@ fn parse_headers<'a>(
     }
 }
 
+pub fn parse_chunked_body(body: Vec<u8>) -> Result<Vec<u8>> {
+    let mut parsed: Vec<u8> = vec![];
+    let mut iterator = body.iter();
+
+    loop {
+        let mut peekable_iterator = iterator.by_ref().peekable();
+        let chunk_len_bytes = take_until_crlf(&mut peekable_iterator)?;
+        let chunk_len_str = std::str::from_utf8(&chunk_len_bytes)?;
+        let chunk_len = chunk_len_str.parse::<usize>()?;
+
+        if peekable_iterator.peek().is_none() {
+            return Err("Incorrect chunked body".into());
+        }
+
+        let mut chunk_bytes = take_until_crlf(&mut peekable_iterator)?;
+
+        if chunk_bytes.len() != chunk_len {
+            return Err("Incorrect chunk length".into());
+        }
+
+        if chunk_len == 0 {
+            return Ok(parsed);
+        } else {
+            parsed.append(&mut chunk_bytes);
+        }
+    }
+}
+
 pub fn parse_request(bytes: &[u8]) -> Result<Request> {
     let mut bytes_iter = bytes.iter();
     let (method, url, version) = parse_request_line(bytes_iter.by_ref())?;
     let headers = parse_headers(bytes_iter.by_ref())?;
 
-    Ok(Request {
+    let mut request = Request {
         method,
         url,
         version,
         headers,
-        body: bytes_iter.copied().collect(),
-    })
+        body: vec![],
+    };
+
+    match request.body_type() {
+        RequestBodyType::ContentLength => {
+            request.body = bytes_iter.copied().collect();
+        }
+        RequestBodyType::TransferEncodingChunked => {
+            request.body = parse_chunked_body(bytes_iter.copied().collect())?;
+        }
+        RequestBodyType::None => {}
+    }
+
+    Ok(request)
 }
 
 #[cfg(test)]
