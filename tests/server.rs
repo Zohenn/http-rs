@@ -104,10 +104,16 @@ fn default_post(url: &str, body: &[u8]) -> Request {
     }
 }
 
-fn issue_request(request_bytes: &[u8]) -> Result<Response> {
+fn issue_request(
+    request_bytes_segments: &[&[u8]],
+    segment_sleep_time: std::time::Duration,
+) -> Result<Response> {
     let mut tcp = TcpStream::connect("127.0.0.1:80")?;
 
-    tcp.write_all(request_bytes)?;
+    for segment in request_bytes_segments {
+        tcp.write_all(segment)?;
+        std::thread::sleep(segment_sleep_time);
+    }
 
     let mut response_bytes: Vec<u8> = vec![];
     tcp.read_to_end(&mut response_bytes)?;
@@ -150,11 +156,19 @@ fn issue_request(request_bytes: &[u8]) -> Result<Response> {
 }
 
 fn issue_req_request(request: &Request) -> Result<Response> {
-    issue_request(&request.as_bytes())
+    issue_request(&[&request.as_bytes()], std::time::Duration::from_secs(0))
 }
 
 fn issue_str_request(str_request: &str) -> Result<Response> {
-    issue_request(str_request.as_bytes())
+    issue_request(&[str_request.as_bytes()], std::time::Duration::from_secs(0))
+}
+
+fn issue_segmented_str_request(segments: &[&str]) -> Result<Response> {
+    let byte_segments = segments
+        .iter()
+        .map(|v| v.as_bytes())
+        .collect::<Vec<&[u8]>>();
+    issue_request(&byte_segments, std::time::Duration::from_millis(50))
 }
 
 #[test]
@@ -249,5 +263,22 @@ fn handles_transfer_encoding_chunked() {
 
         assert_eq!(response.status_code(), &ResponseStatusCode::Ok);
         assert_eq!(std::str::from_utf8(response.body()).unwrap(), "12345678");
+    });
+}
+
+#[test]
+fn handles_segmented_transfer_encoding_chunked() {
+    run_test(|| {
+        let segments = [
+            "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3\r\n123\r\n",
+            "5\r\n45678\r\n",
+            "1\r\n9\r\n",
+            "0\r\n\r\n",
+        ];
+
+        let response = issue_segmented_str_request(&segments).unwrap();
+
+        assert_eq!(response.status_code(), &ResponseStatusCode::Ok);
+        assert_eq!(std::str::from_utf8(response.body()).unwrap(), "123456789");
     });
 }
