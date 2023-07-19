@@ -130,7 +130,7 @@ impl<'connection, 'stream> ReadStateMachine<'connection, 'stream> {
     }
 
     fn next(mut self) -> Self {
-        let next_state = match self.state {
+        let mut next_state = match self.state {
             ReadState::Before if self.connection.tls_connection.is_none() => ReadState::Read,
             ReadState::Before => ReadState::TlsHandshake,
             ReadState::Read => Self::map_error(self.read()),
@@ -139,6 +139,12 @@ impl<'connection, 'stream> ReadStateMachine<'connection, 'stream> {
             ReadState::After(read_bytes) => self.check_if_finished(read_bytes),
             ReadState::Done | ReadState::Error(_) => self.state,
         };
+
+        if matches!(next_state, ReadState::Error(kind) if kind == ErrorKind::TimedOut && self.read_bytes.is_empty())
+        {
+            // just close the connection if read timed out and there were no bytes read at all
+            next_state = ReadState::Done;
+        }
 
         self.set_state(next_state)
     }

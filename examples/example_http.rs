@@ -16,7 +16,7 @@ fn main() -> Result<()> {
     let config = ServerConfigBuilder::new()
         .root("root")
         .keep_alive(KeepAliveConfig::On {
-            timeout: 10,
+            timeout: 5,
             max_requests: 4,
             include_header: true,
         })

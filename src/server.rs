@@ -237,6 +237,12 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
         };
 
         let request_bytes = match self.connection.read(read_strategy) {
+            Ok(bytes) if bytes.is_empty() && current_request.is_some() => {
+                return HandleConnectionState::ClientError(
+                    current_request,
+                    ResponseStatusCode::BadRequest,
+                );
+            }
             Ok(bytes) if bytes.is_empty() => {
                 debug!("Got empty message (TCP FIN, probably)");
                 return HandleConnectionState::Close;
