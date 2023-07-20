@@ -17,7 +17,7 @@ fn main() -> Result<()> {
         .root("root")
         .keep_alive(KeepAliveConfig::On {
             timeout: 5,
-            max_requests: 4,
+            max_requests: 40,
             include_header: true,
         })
         .get();

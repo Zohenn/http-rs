@@ -121,10 +121,16 @@ struct ReadStateMachine<'connection, 'stream> {
 
 impl<'connection, 'stream> ReadStateMachine<'connection, 'stream> {
     fn new(connection: &'connection mut Connection<'stream>, read_strategy: ReadStrategy) -> Self {
+        let read_bytes: Vec<u8> = match read_strategy {
+            // Reserve size for vec if we know upfront how much data should be read
+            ReadStrategy::UntilNoBytesRead(size) => Vec::with_capacity(size),
+            _ => vec![],
+        };
+
         ReadStateMachine {
             connection,
             read_strategy,
-            read_bytes: vec![],
+            read_bytes,
             state: ReadState::Before,
         }
     }
@@ -165,25 +171,20 @@ impl<'connection, 'stream> ReadStateMachine<'connection, 'stream> {
     fn read(&mut self) -> IoResult<ReadState> {
         let stream = &mut self.connection.stream;
 
+        let mut stream_buf = [0u8; 1024];
         let mut read_bytes: usize = 0;
 
         loop {
-            let mut stream_buf = [0u8; 1024];
             let read_length = stream.as_read_mut().read(stream_buf.as_mut_slice())?;
-            self.read_bytes.append(
-                &mut stream_buf
-                    .into_iter()
-                    .take(read_length)
-                    .collect::<Vec<u8>>(),
-            );
+            self.read_bytes.reserve(read_length);
+            self.read_bytes
+                .extend_from_slice(&stream_buf[0..read_length]);
 
             read_bytes += read_length;
 
             if read_length < stream_buf.len() {
                 break;
             }
-
-            stream_buf.fill(0); // todo: why? stream_buf has loop scope
         }
 
         Ok(ReadState::After(read_bytes))
