@@ -30,10 +30,9 @@ fn main() -> Result<()> {
                         .status_code(ResponseStatusCode::Ok)
                         .header(
                             "Content-Type",
-                            request
-                                .headers
-                                .get("Content-Type")
-                                .unwrap_or(&"text/html".to_string()),
+                            &request
+                                .get_header("Content-Type")
+                                .unwrap_or("text/html".to_string()),
                         )
                         .header("Content-Length", &request.body.len().to_string())
                         .body(request.body.clone())

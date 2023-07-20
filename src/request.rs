@@ -1,9 +1,8 @@
-use crate::header::is_header_valid;
+use crate::header::{is_header_valid, Headers};
 use crate::http_version::HttpVersion;
 use crate::request_method::RequestMethod;
 use crate::utils::{skip_whitespace, IteratorUtils, StringUtils};
 use log::debug;
-use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
@@ -21,22 +20,17 @@ pub struct Request {
     pub method: RequestMethod,
     pub url: String,
     pub version: HttpVersion,
-    pub headers: HashMap<String, String>,
+    pub headers: Headers,
     pub body: Vec<u8>,
 }
 
 impl Request {
-    // todo: this should be case insensitive, at least for header names
-    // Probably requires HashMap<String, String> to be changed to Vec<(String, String)>,
-    // and then using string.eq_ignore_ascii_case() when iterating the vector to find given header.
-    // Vec can be used as there will be at most 30-40 headers per request, usually much less,
-    // so it will probably be even faster than HashMap that has constant lookup times
     pub fn has_header(&self, header_name: &str, header_value: Option<&str>) -> bool {
-        match (self.headers.get(header_name), header_value) {
-            (Some(value), Some(header_value)) => header_value == value,
-            (Some(_), None) => true,
-            (None, _) => false,
-        }
+        self.headers.has(header_name, header_value)
+    }
+
+    pub fn get_header(&self, header_name: &str) -> Option<String> {
+        self.headers.get(header_name)
     }
 
     pub fn content_length(&self) -> Option<usize> {
@@ -58,7 +52,7 @@ impl Request {
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut str = format!("{} {} {}\r\n", self.method, self.url, self.version);
 
-        for (name, value) in &self.headers {
+        for (name, value) in self.headers.iter() {
             str += format!("{}: {}\r\n", name, value).as_str();
         }
 
@@ -134,10 +128,8 @@ fn parse_request_line<'a>(
     }
 }
 
-fn parse_headers<'a>(
-    iterator: &mut impl Iterator<Item = &'a u8>,
-) -> Result<HashMap<String, String>> {
-    let mut headers: HashMap<String, String> = HashMap::new();
+fn parse_headers<'a>(iterator: &mut impl Iterator<Item = &'a u8>) -> Result<Headers> {
+    let mut headers = Headers::new();
 
     loop {
         let mut peekable_iterator = iterator.peekable();
@@ -164,7 +156,7 @@ fn parse_headers<'a>(
             return Err("Invalid header".into());
         }
 
-        headers.insert(header_name, header_value);
+        headers.add(&header_name, &header_value);
     }
 }
 
@@ -277,11 +269,11 @@ mod tests {
     }
 
     mod parse_headers {
+        use crate::header::Headers;
         use crate::request::parse_headers;
-        use std::collections::HashMap;
         use std::error::Error;
 
-        fn msg_result(msg: &str) -> Result<HashMap<String, String>, Box<dyn Error>> {
+        fn msg_result(msg: &str) -> Result<Headers, Box<dyn Error>> {
             parse_headers(&mut format!("{}\r\n\r\n", msg).as_bytes().iter())
         }
 
@@ -333,13 +325,33 @@ mod tests {
                 ("Content-Type".to_string(), "text/plain".to_string()),
                 ("Content-Length".to_string(), "3".to_string()),
             ]);
-            assert_eq!(result.headers, headers);
+            assert_eq!(result.headers.as_map(), headers);
         }
 
         #[test]
         fn leftover_bytes_copied_to_body() {
             let result = msg_result(TEST_MESSAGE);
             assert_eq!(result.unwrap().body, vec![b'1', b'2', b'3']);
+        }
+    }
+
+    mod misc {
+        use crate::request::{parse_request, Request};
+        use std::error::Error;
+
+        static TEST_MESSAGE: &str =
+            "POST /index.html HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 3\r\n\r\n123";
+
+        fn msg_result(msg: &str) -> Result<Request, Box<dyn Error>> {
+            parse_request(msg.as_bytes()).map(|v| v.0)
+        }
+
+        #[test]
+        fn has_header_is_case_insensitive() {
+            let result = msg_result(TEST_MESSAGE).unwrap();
+
+            assert!(result.has_header("content-type", None));
+            assert!(result.has_header("CONTENT-LENGTH", None));
         }
     }
 }

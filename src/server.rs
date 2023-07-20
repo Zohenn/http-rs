@@ -533,19 +533,19 @@ mod test {
     }
 
     mod content_response {
+        use crate::header::Headers;
         use crate::http_version::HttpVersion;
         use crate::request::Request;
         use crate::request_method::RequestMethod;
         use crate::server::content_response;
         use crate::server_config::KeepAliveConfig;
-        use std::collections::HashMap;
 
         fn get_request(method: RequestMethod, url: &str) -> Request {
             Request {
                 method,
                 url: url.to_string(),
                 version: HttpVersion::Http1_1,
-                headers: HashMap::new(),
+                headers: Headers::new(),
                 body: vec![],
             }
         }
@@ -647,19 +647,19 @@ mod test {
     }
 
     mod error_response {
+        use crate::header::Headers;
         use crate::http_version::HttpVersion;
         use crate::request::Request;
         use crate::request_method::RequestMethod;
         use crate::response_status_code::ResponseStatusCode;
         use crate::server::error_response;
-        use std::collections::HashMap;
 
         fn get_request(accept: &str) -> Request {
             Request {
                 method: RequestMethod::Get,
                 url: "/".to_string(),
                 version: HttpVersion::Http1_1,
-                headers: HashMap::from([("Accept".to_string(), accept.to_string())]),
+                headers: Headers::from([("Accept".to_string(), accept.to_string())]),
                 body: vec![],
             }
         }
@@ -700,19 +700,19 @@ mod test {
     }
 
     mod options_response {
+        use crate::header::Headers;
         use crate::http_version::HttpVersion;
         use crate::request::Request;
         use crate::request_method::RequestMethod;
         use crate::response_status_code::ResponseStatusCode;
         use crate::server::options_response;
-        use std::collections::HashMap;
 
         fn get_request(url: &str) -> Request {
             Request {
                 method: RequestMethod::Options,
                 url: url.to_string(),
                 version: HttpVersion::Http1_1,
-                headers: HashMap::new(),
+                headers: Headers::new(),
                 body: vec![],
             }
         }
