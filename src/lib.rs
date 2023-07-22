@@ -10,5 +10,6 @@ pub mod request;
 pub mod request_method;
 pub mod response;
 pub mod response_status_code;
+pub mod rule;
 pub mod server;
 pub mod server_config;
