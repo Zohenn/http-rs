@@ -1,11 +1,8 @@
-use proc_macro2::TokenTree::Punct;
+use crate::rules::Rule;
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, ToTokens};
+use quote::ToTokens;
 use syn::parse::{Parse, ParseStream};
-use syn::spanned::Spanned;
-use syn::{parse_macro_input, Ident, LitStr};
-
-mod rule;
+use syn::{parse_macro_input, LitStr};
 
 mod kw {
     syn::custom_keyword!(matches);
@@ -51,34 +48,32 @@ fn parse_pattern_token(input: ParseStream) -> syn::Result<String> {
         .collect::<String>())
 }
 
-#[proc_macro]
-pub fn rules(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let rules: RuleMetadata = parse_macro_input!(input);
+fn parse_tokens(tokens: TokenStream) -> Rule {
+    Rule {
+        pattern: "123".to_string(),
+    }
+}
 
-    let pattern = rules.pattern.clone();
-
-    let tokens = quote! {
-        http_rs::rules::Rule {
-            pattern: #pattern.to_string(),
-        }
-    };
-
-    tokens.into()
+fn parse_str(source: &str) -> Rule {
+    Rule {
+        pattern: "123".to_string(),
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use quote::quote;
+mod test {
+    use crate::rules::parser::parse_str;
 
     #[test]
     fn test() {
-        let input: proc_macro2::TokenStream = quote!(
+        let rule = parse_str(
+            r#"
             matches /index.html {
                 return 301 /index2.html
             }
+        "#,
         );
 
-        println!("{input:?}");
+        assert_eq!(rule.pattern, "/index.html");
     }
 }
