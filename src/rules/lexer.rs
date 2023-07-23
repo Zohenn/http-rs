@@ -6,6 +6,7 @@ pub enum RuleToken {
 
     LBrace,
     RBrace,
+    Semicolon,
 
     // literals
     LitStr(String),
@@ -18,7 +19,7 @@ pub enum RuleToken {
     Eof,
 }
 
-fn tokenize(input: &str) -> Vec<RuleToken> {
+pub(crate) fn tokenize(input: &str) -> Vec<RuleToken> {
     let input_bytes = input.to_string().into_bytes();
     let mut iter = input_bytes.into_iter().peekable();
 
@@ -31,6 +32,15 @@ fn tokenize(input: &str) -> Vec<RuleToken> {
         let token = match character {
             b'{' => RuleToken::LBrace,
             b'}' => RuleToken::RBrace,
+            b'"' => {
+                let lit = read_string(&mut iter);
+
+                // swallow ending "
+                iter.next();
+
+                RuleToken::LitStr(lit)
+            }
+            b';' => RuleToken::Semicolon,
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
                 let ident = String::from(character as char);
                 let ident = ident + &read_ident(&mut iter);
@@ -40,14 +50,6 @@ fn tokenize(input: &str) -> Vec<RuleToken> {
                     "return" => RuleToken::Return,
                     _ => RuleToken::Ident(ident),
                 }
-            }
-            b'"' => {
-                let lit = read_string(&mut iter);
-
-                // swallow ending "
-                iter.next();
-
-                RuleToken::LitStr(lit)
             }
             b'0'..=b'9' => {
                 let lit = String::from(character as char) + &read_int(&mut iter);
@@ -76,38 +78,43 @@ fn skip_whitespace(iter: &mut Peekable<impl Iterator<Item = u8>>) {
     }
 }
 
-macro_rules! read_until_helper {
-    ($name:ident, $condition:expr) => {
-        fn $name(iter: &mut Peekable<impl Iterator<Item = u8>>) -> String {
-            let mut output = String::new();
-
-            loop {
-                let next = iter.peek().unwrap_or(&0u8);
-
-                if $condition(next) {
-                    output.push(*next as char);
-                    iter.next();
-                } else {
-                    break;
-                }
-            }
-
-            output
-        }
-    };
+fn read_ident(iter: &mut Peekable<impl Iterator<Item = u8>>) -> String {
+    read_until_inner(iter, |next: &u8| {
+        next.is_ascii_alphabetic() || next == &b'_'
+    })
 }
 
-read_until_helper!(read_ident, |next: &u8| {
-    next.is_ascii_alphabetic() || next == &b'_'
-});
+fn read_string(iter: &mut Peekable<impl Iterator<Item = u8>>) -> String {
+    read_until_inner(iter, |next: &u8| next != &b'"')
+}
 
-read_until_helper!(read_string, |next: &u8| { next != &b'"' });
+fn read_int(iter: &mut Peekable<impl Iterator<Item = u8>>) -> String {
+    read_until_inner(iter, |next: &u8| next.is_ascii_digit())
+}
 
-read_until_helper!(read_int, |next: &u8| { next.is_ascii_digit() });
+fn read_until_whitespace(iter: &mut Peekable<impl Iterator<Item = u8>>) -> String {
+    read_until_inner(iter, |next: &u8| !next.is_ascii_whitespace())
+}
 
-read_until_helper!(read_until_whitespace, |next: &u8| {
-    !next.is_ascii_whitespace()
-});
+fn read_until_inner(
+    iter: &mut Peekable<impl Iterator<Item = u8>>,
+    condition: impl Fn(&u8) -> bool,
+) -> String {
+    let mut output = String::new();
+
+    loop {
+        let next = iter.peek().unwrap_or(&0u8);
+
+        if condition(next) {
+            output.push(*next as char);
+            iter.next();
+        } else {
+            break;
+        }
+    }
+
+    output
+}
 
 #[cfg(test)]
 mod test {
@@ -118,8 +125,8 @@ mod test {
         let tokens = tokenize(
             r#"
             matches /index.html {
-                set_header "Server" "http-rs"
-                return 301 "/index2.html"
+                set_header "Server" "http-rs";
+                return 301 "/index2.html";
             }
         "#,
         );
@@ -131,9 +138,11 @@ mod test {
             RuleToken::Ident("set_header".into()),
             RuleToken::LitStr("Server".into()),
             RuleToken::LitStr("http-rs".into()),
+            RuleToken::Semicolon,
             RuleToken::Return,
             RuleToken::LitInt("301".into()),
             RuleToken::LitStr("/index2.html".into()),
+            RuleToken::Semicolon,
             RuleToken::RBrace,
         ];
 
