@@ -28,6 +28,7 @@ pub struct ServerConfig {
     pub https: bool,
     pub cert_path: Option<String>,
     pub key_path: Option<String>,
+    pub rules_path: Option<String>,
     pub keep_alive: KeepAliveConfig,
     pub timeout: u8,
 }
@@ -40,6 +41,7 @@ impl Default for ServerConfig {
             https: false,
             cert_path: None,
             key_path: None,
+            rules_path: None,
             keep_alive: KeepAliveConfig::default(),
             timeout: 10,
         }
@@ -119,6 +121,12 @@ impl ServerConfigBuilder {
 
     pub fn key_path(mut self, key_path: &str) -> Self {
         self.server_config.key_path = Some(key_path.to_string());
+
+        self
+    }
+
+    pub fn rules_path(mut self, rules_path: &str) -> Self {
+        self.server_config.rules_path = Some(rules_path.to_string());
 
         self
     }

@@ -1,9 +1,21 @@
 use crate::rules::lexer::{tokenize, RuleToken};
 use crate::rules::{Rule, RuleAction};
+use std::fs::File;
+use std::io::Read;
 
 enum RuleParseState {
     None,
     HasPattern,
+}
+
+pub fn parse_file(path: &str) -> Vec<Rule> {
+    let mut file = File::open(path).unwrap();
+
+    let mut file_contents = String::new();
+
+    file.read_to_string(&mut file_contents).unwrap();
+
+    parse_str(&file_contents)
 }
 
 fn parse_str(source: &str) -> Vec<Rule> {

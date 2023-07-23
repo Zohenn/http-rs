@@ -3,6 +3,7 @@ use crate::request::{parse_chunked_body, parse_request, Request, RequestBodyType
 use crate::request_method::RequestMethod;
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
+use crate::rules::{parse_file, Rule, RuleAction};
 use crate::server_config::{KeepAliveConfig, ServerConfig};
 use crate::types::IoResult;
 use log::{debug, info};
@@ -17,14 +18,23 @@ type RequestListener = dyn Fn(&Request) -> Option<Response> + Send + Sync;
 #[derive(Clone)]
 pub struct Server {
     config: Arc<ServerConfig>,
+    rules: Arc<Vec<Rule>>,
     https_config: Option<Arc<rustls::ServerConfig>>,
     listener: Option<Arc<RequestListener>>,
 }
 
 impl Server {
     pub fn new(config: Option<ServerConfig>) -> Self {
+        let rules = match &config {
+            Some(config) if config.rules_path.is_some() => {
+                parse_file(config.rules_path.as_ref().unwrap())
+            }
+            _ => vec![],
+        };
+
         Server {
             config: Arc::new(config.unwrap_or(ServerConfig::default())),
+            rules: Arc::new(rules),
             https_config: None,
             listener: None,
         }
@@ -130,8 +140,10 @@ impl Server {
 
         if let Ok(content_bytes) = content {
             if !request.method.is_safe() {
-                return error_response(Some(request), ResponseStatusCode::MethodNotAllowed)
-                    .add_header("Allow", &RequestMethod::safe_methods_str());
+                let mut response =
+                    error_response(Some(request), ResponseStatusCode::MethodNotAllowed);
+                response.add_header("Allow", &RequestMethod::safe_methods_str());
+                return response;
             } else if request.method == RequestMethod::Options {
                 return options_response(request);
             }
@@ -329,6 +341,8 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
         request: Option<Request>,
         mut response: Response,
     ) -> HandleConnectionState {
+        apply_rules(&self.server.rules, &mut response);
+
         let should_close = !self.persistent
             || self.served_requests_count == self.max_requests - 1
             || request
@@ -336,7 +350,7 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
                 .is_some_and(|request| request.has_header("Connection", Some("close")));
 
         if should_close {
-            response = response.add_header("Connection", "close");
+            response.add_header("Connection", "close");
         }
 
         match self.connection.write(&response.as_bytes()) {
@@ -360,6 +374,19 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
     ) -> HandleConnectionState {
         let response = error_response(request.as_ref(), status_code);
         HandleConnectionState::SendResponse(request, response)
+    }
+}
+
+fn apply_rules(rules: &[Rule], response: &mut Response) {
+    for rule in rules {
+        for action in &rule.actions {
+            match action {
+                RuleAction::SetHeader(header_name, header_value) => {
+                    response.add_header(header_name, header_value);
+                }
+                RuleAction::CustomReturn(_, _) => {}
+            }
+        }
     }
 }
 

@@ -20,6 +20,7 @@ fn main() -> Result<()> {
             max_requests: 40,
             include_header: true,
         })
+        .rules_path("http.rules")
         .get();
 
     Server::new(Some(config))

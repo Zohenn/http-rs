@@ -32,10 +32,8 @@ impl Response {
         &self.body
     }
 
-    pub fn add_header(mut self, header_name: &str, header_value: &str) -> Self {
+    pub fn add_header(&mut self, header_name: &str, header_value: &str) {
         self.headers.insert(header_name.into(), header_value.into());
-
-        self
     }
 
     pub(crate) fn as_bytes(&self) -> Vec<u8> {
