@@ -1,4 +1,5 @@
 use crate::utils::StringUtils;
+use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -43,6 +44,11 @@ pub enum ResponseStatusCode {
 }
 
 impl ResponseStatusCode {
+    pub fn is_redirect(&self) -> bool {
+        let self_int = *self as u16;
+        (300..400).contains(&self_int)
+    }
+
     pub fn is_error(&self) -> bool {
         *self as u16 >= 400
     }
@@ -93,5 +99,48 @@ impl Display for ResponseStatusCode {
         };
 
         write!(f, "{}", string_value)
+    }
+}
+
+impl TryFrom<u16> for ResponseStatusCode {
+    type Error = String;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        let code = match value {
+            100 => ResponseStatusCode::Continue,
+            101 => ResponseStatusCode::SwitchingProtocols,
+
+            200 => ResponseStatusCode::Ok,
+            201 => ResponseStatusCode::Created,
+            202 => ResponseStatusCode::Accepted,
+            204 => ResponseStatusCode::NoContent,
+
+            301 => ResponseStatusCode::MovedPermanently,
+            302 => ResponseStatusCode::Found,
+            303 => ResponseStatusCode::SeeOther,
+            304 => ResponseStatusCode::NotModified,
+            307 => ResponseStatusCode::TemporaryRedirect,
+            308 => ResponseStatusCode::PermanentRedirect,
+
+            400 => ResponseStatusCode::BadRequest,
+            401 => ResponseStatusCode::Unauthorized,
+            403 => ResponseStatusCode::Forbidden,
+            404 => ResponseStatusCode::NotFound,
+            405 => ResponseStatusCode::MethodNotAllowed,
+            408 => ResponseStatusCode::RequestTimeout,
+            418 => ResponseStatusCode::ImATeapot,
+            429 => ResponseStatusCode::TooManyRequests,
+
+            500 => ResponseStatusCode::InternalServerError,
+            501 => ResponseStatusCode::NotImplemented,
+            502 => ResponseStatusCode::BadGateway,
+            503 => ResponseStatusCode::ServiceUnavailable,
+            504 => ResponseStatusCode::GatewayTimeout,
+            505 => ResponseStatusCode::HttpVersionNotSupported,
+
+            _ => return Err(format!("Incorrect status code: {value}")),
+        };
+
+        Ok(code)
     }
 }

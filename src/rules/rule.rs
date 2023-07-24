@@ -1,7 +1,10 @@
+use crate::response_status_code::ResponseStatusCode;
+
 #[derive(Debug, PartialEq)]
 pub enum RuleAction {
     SetHeader(String, String),
-    CustomReturn(u16, String),
+    RedirectReturn(ResponseStatusCode, String),
+    CustomReturn(ResponseStatusCode, Option<String>),
 }
 
 #[derive(Debug)]

@@ -1,3 +1,4 @@
+use crate::response_status_code::ResponseStatusCode;
 use crate::rules::lexer::{tokenize, RuleToken};
 use crate::rules::{Rule, RuleAction};
 use std::fs::File;
@@ -69,7 +70,10 @@ fn parse_tokens(tokens: Vec<RuleToken>) -> Vec<Rule> {
 
                     let action = match tokens_until_semicolon[..] {
                         [RuleToken::Return, RuleToken::LitInt(response_code), RuleToken::LitStr(location)] => {
-                            parse_return(response_code, location)
+                            parse_return(response_code, Some(location))
+                        }
+                        [RuleToken::Return, RuleToken::LitInt(response_code)] => {
+                            parse_return(response_code, None)
                         }
                         [RuleToken::Ident(function), RuleToken::LitStr(arg1), RuleToken::LitStr(arg2)] => {
                             parse_2_arg_function(function, arg1, arg2)
@@ -86,12 +90,20 @@ fn parse_tokens(tokens: Vec<RuleToken>) -> Vec<Rule> {
     rules
 }
 
-fn parse_return(response_code: &str, location: &str) -> RuleAction {
+fn parse_return(response_code: &str, additional_data: Option<&str>) -> RuleAction {
     let response_code = response_code
         .parse::<u16>()
         .expect("Incorrect response_code");
 
-    RuleAction::CustomReturn(response_code, location.into())
+    let response_code = ResponseStatusCode::try_from(response_code).unwrap();
+
+    if response_code.is_redirect() {
+        let location =
+            additional_data.expect("Return with redirect must be followed with location url");
+        RuleAction::RedirectReturn(response_code, location.into())
+    } else {
+        RuleAction::CustomReturn(response_code, additional_data.map(|v| v.into()))
+    }
 }
 
 fn parse_2_arg_function(function: &str, arg1: &str, arg2: &str) -> RuleAction {
@@ -103,6 +115,7 @@ fn parse_2_arg_function(function: &str, arg1: &str, arg2: &str) -> RuleAction {
 
 #[cfg(test)]
 mod test {
+    use crate::response_status_code::ResponseStatusCode;
     use crate::rules::parser::parse_str;
     use crate::rules::RuleAction;
 
@@ -133,7 +146,10 @@ mod test {
         assert_eq!(rule.pattern, "/index.html");
         assert_eq!(
             rule.actions[0],
-            RuleAction::CustomReturn(301, "/index2.html".into())
+            RuleAction::CustomReturn(
+                ResponseStatusCode::MovedPermanently,
+                Some("/index2.html".into())
+            )
         );
     }
 }

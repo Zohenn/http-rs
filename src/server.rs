@@ -339,9 +339,12 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
     fn send_response(
         &mut self,
         request: Option<Request>,
-        mut response: Response,
+        response: Response,
     ) -> HandleConnectionState {
-        apply_rules(&self.server.rules, &mut response);
+        let mut response = match &request {
+            Some(request) => apply_rules(&self.server.rules, request, response),
+            None => response,
+        };
 
         let should_close = !self.persistent
             || self.served_requests_count == self.max_requests - 1
@@ -377,17 +380,37 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
     }
 }
 
-fn apply_rules(rules: &[Rule], response: &mut Response) {
+fn apply_rules(rules: &[Rule], request: &Request, mut response: Response) -> Response {
+    let mut out_response = response;
+
     for rule in rules {
+        if request
+            .url
+            .matches(&rule.pattern)
+            .collect::<Vec<&str>>()
+            .is_empty()
+        {
+            continue;
+        }
+
         for action in &rule.actions {
             match action {
                 RuleAction::SetHeader(header_name, header_value) => {
-                    response.add_header(header_name, header_value);
+                    out_response.add_header(header_name, header_value);
                 }
-                RuleAction::CustomReturn(_, _) => {}
+                RuleAction::RedirectReturn(response_code, location) => {
+                    out_response.add_header("Location", location);
+                    out_response.set_status_code(*response_code);
+                    return out_response;
+                }
+                RuleAction::CustomReturn(response_code, additional_data) => {
+                    return out_response;
+                }
             }
         }
     }
+
+    out_response
 }
 
 fn get_content(root: &str, content_path: &str) -> IoResult<Vec<u8>> {

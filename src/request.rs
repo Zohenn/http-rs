@@ -181,7 +181,7 @@ pub fn parse_chunked_body(body: Vec<u8>) -> Result<(Vec<u8>, bool)> {
         }
 
         // todo: this must not take all bytes until crlf, rather chunk_len bytes and then make sure
-        // that the next 2 bytes ar crlf
+        // that the next 2 bytes are crlf to allow crlf inside chunk contents
         let mut chunk_bytes = take_until_crlf(&mut peekable_iterator)?;
 
         if chunk_bytes.len() != chunk_len {

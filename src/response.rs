@@ -32,6 +32,10 @@ impl Response {
         &self.body
     }
 
+    pub fn set_status_code(&mut self, status_code: ResponseStatusCode) {
+        self.status_code = status_code;
+    }
+
     pub fn add_header(&mut self, header_name: &str, header_value: &str) {
         self.headers.insert(header_name.into(), header_value.into());
     }
