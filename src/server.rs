@@ -399,11 +399,18 @@ fn apply_rules(rules: &[Rule], request: &Request, mut response: Response) -> Res
                     out_response.add_header(header_name, header_value);
                 }
                 RuleAction::RedirectReturn(response_code, location) => {
-                    out_response.add_header("Location", location);
                     out_response.set_status_code(*response_code);
+                    out_response.add_header("Location", location);
+
                     return out_response;
                 }
                 RuleAction::CustomReturn(response_code, additional_data) => {
+                    out_response.set_status_code(*response_code);
+
+                    if let Some(body) = additional_data {
+                        out_response.set_body(body.clone().into_bytes());
+                    }
+
                     return out_response;
                 }
             }

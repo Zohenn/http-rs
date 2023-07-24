@@ -5,3 +5,7 @@ matches / {
 matches /index2.html {
     return 301 "/index.html";
 }
+
+matches /index3.html {
+    return 403 "Naaaah";
+}

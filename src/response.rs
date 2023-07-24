@@ -40,6 +40,10 @@ impl Response {
         self.headers.insert(header_name.into(), header_value.into());
     }
 
+    pub fn set_body(&mut self, body: Vec<u8>) {
+        self.body = body;
+    }
+
     pub(crate) fn as_bytes(&self) -> Vec<u8> {
         let mut bytes: Vec<u8> = vec![];
 
