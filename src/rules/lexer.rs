@@ -1,5 +1,7 @@
 use std::iter::Peekable;
 
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuleToken {
     Ident(String),
@@ -19,7 +21,7 @@ pub enum RuleToken {
     Eof,
 }
 
-pub(crate) fn tokenize(input: &str) -> Vec<RuleToken> {
+pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
     let mut iter = input.chars().peekable();
 
     let mut tokens: Vec<RuleToken> = vec![];
@@ -55,7 +57,7 @@ pub(crate) fn tokenize(input: &str) -> Vec<RuleToken> {
 
                 RuleToken::LitInt(lit)
             }
-            _ => panic!("Unexpected token: {}", { character }),
+            _ => return Err(format!("Unexpected token: {}", { character }).into()),
         };
 
         tokens.push(token);
@@ -68,7 +70,7 @@ pub(crate) fn tokenize(input: &str) -> Vec<RuleToken> {
         skip_whitespace(&mut iter);
     }
 
-    tokens
+    Ok(tokens)
 }
 
 fn skip_whitespace(iter: &mut Peekable<impl Iterator<Item = char>>) {
@@ -128,7 +130,8 @@ mod test {
                 return 301 "/index2.html";
             }
         "#,
-        );
+        )
+        .unwrap();
 
         let expected_tokens = vec![
             RuleToken::Matches,

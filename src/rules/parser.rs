@@ -4,12 +4,14 @@ use crate::rules::{Rule, RuleAction};
 use std::fs::File;
 use std::io::Read;
 
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 enum RuleParseState {
     None,
     HasPattern,
 }
 
-pub fn parse_file(path: &str) -> Vec<Rule> {
+pub fn parse_file(path: &str) -> Result<Vec<Rule>> {
     let mut file = File::open(path).unwrap();
 
     let mut file_contents = String::new();
@@ -19,15 +21,15 @@ pub fn parse_file(path: &str) -> Vec<Rule> {
     parse_str(&file_contents)
 }
 
-fn parse_str(source: &str) -> Vec<Rule> {
-    parse_tokens(tokenize(source))
+fn parse_str(source: &str) -> Result<Vec<Rule>> {
+    parse_tokens(tokenize(source)?)
 }
 
-fn parse_tokens(tokens: Vec<RuleToken>) -> Vec<Rule> {
+fn parse_tokens(tokens: Vec<RuleToken>) -> Result<Vec<Rule>> {
     let mut rules: Vec<Rule> = vec![];
 
     if tokens.is_empty() {
-        return rules;
+        return Ok(rules);
     }
 
     let mut state = RuleParseState::None;
@@ -48,10 +50,13 @@ fn parse_tokens(tokens: Vec<RuleToken>) -> Vec<Rule> {
                         rule_builder = rule_builder.pattern(pattern.into());
                         state = RuleParseState::HasPattern;
                     }
-                    _ => panic!(
-                        "Rule must start with 'matches *pattern*' {:?}",
-                        tokens_until_lbrace
-                    ),
+                    _ => {
+                        return Err(format!(
+                            "Rule must start with 'matches *pattern*' {:?}",
+                            tokens_until_lbrace
+                        )
+                        .into())
+                    }
                 }
             }
             RuleParseState::HasPattern => match next_token {
@@ -70,15 +75,19 @@ fn parse_tokens(tokens: Vec<RuleToken>) -> Vec<Rule> {
 
                     let action = match tokens_until_semicolon[..] {
                         [RuleToken::Return, RuleToken::LitInt(response_code), RuleToken::LitStr(location)] => {
-                            parse_return(response_code, Some(location))
+                            parse_return(response_code, Some(location))?
                         }
                         [RuleToken::Return, RuleToken::LitInt(response_code)] => {
-                            parse_return(response_code, None)
+                            parse_return(response_code, None)?
                         }
                         [RuleToken::Ident(function), RuleToken::LitStr(arg1), RuleToken::LitStr(arg2)] => {
-                            parse_2_arg_function(function, arg1, arg2)
+                            parse_2_arg_function(function, arg1, arg2)?
                         }
-                        _ => panic!("Unexpected tokens {tokens_until_semicolon:?}"),
+                        _ => {
+                            return Err(
+                                format!("Unexpected tokens {tokens_until_semicolon:?}").into()
+                            )
+                        }
                     };
 
                     rule_builder = rule_builder.add_action(action);
@@ -87,30 +96,35 @@ fn parse_tokens(tokens: Vec<RuleToken>) -> Vec<Rule> {
         }
     }
 
-    rules
+    Ok(rules)
 }
 
-fn parse_return(response_code: &str, additional_data: Option<&str>) -> RuleAction {
+fn parse_return(response_code: &str, additional_data: Option<&str>) -> Result<RuleAction> {
     let response_code = response_code
         .parse::<u16>()
-        .expect("Incorrect response_code");
+        .map_err(|_| "Incorrect response code")?;
 
     let response_code = ResponseStatusCode::try_from(response_code).unwrap();
 
-    if response_code.is_redirect() {
-        let location =
-            additional_data.expect("Return with redirect must be followed with location url");
+    let action = if response_code.is_redirect() {
+        let location = additional_data.ok_or::<Box<dyn std::error::Error>>(
+            "Return with redirect must be followed with location url".into(),
+        )?;
         RuleAction::RedirectReturn(response_code, location.into())
     } else {
         RuleAction::CustomReturn(response_code, additional_data.map(|v| v.into()))
-    }
+    };
+
+    Ok(action)
 }
 
-fn parse_2_arg_function(function: &str, arg1: &str, arg2: &str) -> RuleAction {
-    match function {
+fn parse_2_arg_function(function: &str, arg1: &str, arg2: &str) -> Result<RuleAction> {
+    let action = match function {
         "set_header" => RuleAction::SetHeader(arg1.into(), arg2.into()),
-        _ => panic!("Unexpected identifier: {function}"),
-    }
+        _ => return Err(format!("Unexpected identifier: {function}").into()),
+    };
+
+    Ok(action)
 }
 
 #[cfg(test)]
@@ -131,7 +145,8 @@ mod test {
                 return 301 "/index2.html";
             }
         "#,
-        );
+        )
+        .unwrap();
 
         let rule = rules.first().unwrap();
 

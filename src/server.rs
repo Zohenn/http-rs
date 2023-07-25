@@ -6,7 +6,7 @@ use crate::response_status_code::ResponseStatusCode;
 use crate::rules::{parse_file, Rule, RuleAction};
 use crate::server_config::{KeepAliveConfig, ServerConfig};
 use crate::types::IoResult;
-use log::{debug, info};
+use log::{debug, error, info};
 use std::fs;
 use std::io::ErrorKind;
 use std::net::{TcpListener, TcpStream};
@@ -27,7 +27,13 @@ impl Server {
     pub fn new(config: Option<ServerConfig>) -> Self {
         let rules = match &config {
             Some(config) if config.rules_path.is_some() => {
-                parse_file(config.rules_path.as_ref().unwrap())
+                match parse_file(config.rules_path.as_ref().unwrap()) {
+                    Ok(rules) => rules,
+                    Err(e) => {
+                        error!("Error parsing rules file: {e:?}");
+                        vec![]
+                    }
+                }
             }
             _ => vec![],
         };
@@ -142,7 +148,7 @@ impl Server {
             if !request.method.is_safe() {
                 let mut response =
                     error_response(Some(request), ResponseStatusCode::MethodNotAllowed);
-                response.add_header("Allow", &RequestMethod::safe_methods_str());
+                response.set_header("Allow", &RequestMethod::safe_methods_str());
                 return response;
             } else if request.method == RequestMethod::Options {
                 return options_response(request);
@@ -353,7 +359,7 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
                 .is_some_and(|request| request.has_header("Connection", Some("close")));
 
         if should_close {
-            response.add_header("Connection", "close");
+            response.set_header("Connection", "close");
         }
 
         match self.connection.write(&response.as_bytes()) {
@@ -396,11 +402,11 @@ fn apply_rules(rules: &[Rule], request: &Request, mut response: Response) -> Res
         for action in &rule.actions {
             match action {
                 RuleAction::SetHeader(header_name, header_value) => {
-                    out_response.add_header(header_name, header_value);
+                    out_response.set_header(header_name, header_value);
                 }
                 RuleAction::RedirectReturn(response_code, location) => {
                     out_response.set_status_code(*response_code);
-                    out_response.add_header("Location", location);
+                    out_response.set_header("Location", location);
 
                     return out_response;
                 }
