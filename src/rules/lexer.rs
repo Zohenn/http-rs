@@ -34,7 +34,7 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
             '{' => RuleToken::LBrace,
             '}' => RuleToken::RBrace,
             '"' => {
-                let lit = read_string(&mut iter);
+                let lit = read_string(&mut iter)?;
 
                 // swallow ending "
                 iter.next();
@@ -53,7 +53,7 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
                 }
             }
             '0'..='9' => {
-                let lit = String::from(character) + &read_int(&mut iter);
+                let lit = String::from(character) + &read_int(&mut iter)?;
 
                 RuleToken::LitInt(lit)
             }
@@ -83,38 +83,49 @@ fn read_ident(iter: &mut Peekable<impl Iterator<Item = char>>) -> String {
     read_until_inner(iter, |next: &char| {
         next.is_ascii_alphabetic() || next == &'_'
     })
+    .0
 }
 
-fn read_string(iter: &mut Peekable<impl Iterator<Item = char>>) -> String {
-    read_until_inner(iter, |next: &char| next != &'"')
+fn read_string(iter: &mut Peekable<impl Iterator<Item = char>>) -> Result<String> {
+    let (lit, next) = read_until_inner(iter, |next: &char| next != &'"');
+
+    match next {
+        Some(c) if c == '"' => Ok(lit),
+        _ => Err("Unterminated string".into()),
+    }
 }
 
-fn read_int(iter: &mut Peekable<impl Iterator<Item = char>>) -> String {
-    read_until_inner(iter, |next: &char| next.is_ascii_digit())
+fn read_int(iter: &mut Peekable<impl Iterator<Item = char>>) -> Result<String> {
+    let (lit, next) = read_until_inner(iter, |next: &char| next.is_ascii_digit());
+
+    match next {
+        Some(c) if c.is_ascii_whitespace() => Ok(lit),
+        None => Ok(lit),
+        _ => Err("Unexpected token".into()),
+    }
 }
 
 fn read_until_whitespace(iter: &mut Peekable<impl Iterator<Item = char>>) -> String {
-    read_until_inner(iter, |next: &char| !next.is_ascii_whitespace())
+    read_until_inner(iter, |next: &char| !next.is_ascii_whitespace()).0
 }
 
 fn read_until_inner(
     iter: &mut Peekable<impl Iterator<Item = char>>,
     condition: impl Fn(&char) -> bool,
-) -> String {
+) -> (String, Option<char>) {
     let mut output = String::new();
 
     loop {
-        let next = iter.peek().unwrap_or(&'\0');
+        let next = iter.peek();
 
-        if condition(next) {
-            output.push(*next);
-            iter.next();
-        } else {
-            break;
+        match next {
+            Some(next) if condition(next) => {
+                output.push(*next);
+                iter.next();
+            }
+            _ => return (output, next.copied()),
         }
     }
-
-    output
 }
 
 #[cfg(test)]
@@ -153,5 +164,19 @@ mod test {
             println!("expected: {expected:?}, got: {token:?}");
             assert_eq!(token, expected);
         }
+    }
+
+    #[test]
+    fn err_on_invalid_int() {
+        let tokens = tokenize("34rioewj");
+
+        assert!(tokens.is_err())
+    }
+
+    #[test]
+    fn err_on_unterminated_string() {
+        let tokens = tokenize("return 301 \"/index.html");
+
+        assert!(tokens.is_err());
     }
 }
