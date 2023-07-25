@@ -20,8 +20,7 @@ pub enum RuleToken {
 }
 
 pub(crate) fn tokenize(input: &str) -> Vec<RuleToken> {
-    let input_bytes = input.to_string().into_bytes();
-    let mut iter = input_bytes.into_iter().peekable();
+    let mut iter = input.chars().peekable();
 
     let mut tokens: Vec<RuleToken> = vec![];
 
@@ -30,9 +29,9 @@ pub(crate) fn tokenize(input: &str) -> Vec<RuleToken> {
     while iter.peek().is_some() {
         let character = iter.next().unwrap();
         let token = match character {
-            b'{' => RuleToken::LBrace,
-            b'}' => RuleToken::RBrace,
-            b'"' => {
+            '{' => RuleToken::LBrace,
+            '}' => RuleToken::RBrace,
+            '"' => {
                 let lit = read_string(&mut iter);
 
                 // swallow ending "
@@ -40,9 +39,9 @@ pub(crate) fn tokenize(input: &str) -> Vec<RuleToken> {
 
                 RuleToken::LitStr(lit)
             }
-            b';' => RuleToken::Semicolon,
-            b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
-                let ident = String::from(character as char);
+            ';' => RuleToken::Semicolon,
+            'a'..='z' | 'A'..='Z' | '_' => {
+                let ident = String::from(character);
                 let ident = ident + &read_ident(&mut iter);
 
                 match &*ident {
@@ -51,12 +50,12 @@ pub(crate) fn tokenize(input: &str) -> Vec<RuleToken> {
                     _ => RuleToken::Ident(ident),
                 }
             }
-            b'0'..=b'9' => {
-                let lit = String::from(character as char) + &read_int(&mut iter);
+            '0'..='9' => {
+                let lit = String::from(character) + &read_int(&mut iter);
 
                 RuleToken::LitInt(lit)
             }
-            _ => panic!("Unexpected token: {}", character as char),
+            _ => panic!("Unexpected token: {}", { character }),
         };
 
         tokens.push(token);
@@ -72,41 +71,41 @@ pub(crate) fn tokenize(input: &str) -> Vec<RuleToken> {
     tokens
 }
 
-fn skip_whitespace(iter: &mut Peekable<impl Iterator<Item = u8>>) {
-    while iter.peek().unwrap_or(&0u8).is_ascii_whitespace() {
+fn skip_whitespace(iter: &mut Peekable<impl Iterator<Item = char>>) {
+    while iter.peek().unwrap_or(&'\0').is_ascii_whitespace() {
         iter.next();
     }
 }
 
-fn read_ident(iter: &mut Peekable<impl Iterator<Item = u8>>) -> String {
-    read_until_inner(iter, |next: &u8| {
-        next.is_ascii_alphabetic() || next == &b'_'
+fn read_ident(iter: &mut Peekable<impl Iterator<Item = char>>) -> String {
+    read_until_inner(iter, |next: &char| {
+        next.is_ascii_alphabetic() || next == &'_'
     })
 }
 
-fn read_string(iter: &mut Peekable<impl Iterator<Item = u8>>) -> String {
-    read_until_inner(iter, |next: &u8| next != &b'"')
+fn read_string(iter: &mut Peekable<impl Iterator<Item = char>>) -> String {
+    read_until_inner(iter, |next: &char| next != &'"')
 }
 
-fn read_int(iter: &mut Peekable<impl Iterator<Item = u8>>) -> String {
-    read_until_inner(iter, |next: &u8| next.is_ascii_digit())
+fn read_int(iter: &mut Peekable<impl Iterator<Item = char>>) -> String {
+    read_until_inner(iter, |next: &char| next.is_ascii_digit())
 }
 
-fn read_until_whitespace(iter: &mut Peekable<impl Iterator<Item = u8>>) -> String {
-    read_until_inner(iter, |next: &u8| !next.is_ascii_whitespace())
+fn read_until_whitespace(iter: &mut Peekable<impl Iterator<Item = char>>) -> String {
+    read_until_inner(iter, |next: &char| !next.is_ascii_whitespace())
 }
 
 fn read_until_inner(
-    iter: &mut Peekable<impl Iterator<Item = u8>>,
-    condition: impl Fn(&u8) -> bool,
+    iter: &mut Peekable<impl Iterator<Item = char>>,
+    condition: impl Fn(&char) -> bool,
 ) -> String {
     let mut output = String::new();
 
     loop {
-        let next = iter.peek().unwrap_or(&0u8);
+        let next = iter.peek().unwrap_or(&'\0');
 
         if condition(next) {
-            output.push(*next as char);
+            output.push(*next);
             iter.next();
         } else {
             break;
