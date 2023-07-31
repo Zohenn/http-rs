@@ -36,9 +36,6 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
             '"' => {
                 let lit = read_string(&mut iter)?;
 
-                // swallow ending "
-                iter.next();
-
                 RuleToken::LitStr(lit)
             }
             ';' => RuleToken::Semicolon,
@@ -62,6 +59,10 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
 
         tokens.push(token);
 
+        // todo: change this in some way, lexer is not the best place for this
+        // either change the grammar and make pattern be a normal " delimited string
+        // or store info on whether next character after token is whitespace
+        // and take all grouped (not separated by whitespace) tokens when parsing a rule
         if let Some(RuleToken::Matches) = tokens.last() {
             skip_whitespace(&mut iter);
             tokens.push(RuleToken::LitStr(read_until_whitespace(&mut iter)));
@@ -79,18 +80,21 @@ fn skip_whitespace(iter: &mut Peekable<impl Iterator<Item = char>>) {
     }
 }
 
+#[rustfmt::skip]
 fn read_ident(iter: &mut Peekable<impl Iterator<Item = char>>) -> String {
-    read_until_inner(iter, |next: &char| {
-        next.is_ascii_alphabetic() || next == &'_'
-    })
-    .0
+    read_until_inner(iter, |next: &char| next.is_ascii_alphabetic() || next == &'_').0
 }
 
 fn read_string(iter: &mut Peekable<impl Iterator<Item = char>>) -> Result<String> {
     let (lit, next) = read_until_inner(iter, |next: &char| next != &'"');
 
     match next {
-        Some(c) if c == '"' => Ok(lit),
+        Some(c) if c == '"' => {
+            // swallow ending "
+            iter.next();
+
+            Ok(lit)
+        }
         _ => Err("Unterminated string".into()),
     }
 }

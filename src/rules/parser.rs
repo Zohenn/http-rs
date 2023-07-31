@@ -1,4 +1,5 @@
 use crate::response_status_code::ResponseStatusCode;
+use crate::rules::grammar::file;
 use crate::rules::lexer::{tokenize, RuleToken};
 use crate::rules::{Rule, RuleAction};
 use std::fs::File;
@@ -22,7 +23,8 @@ pub fn parse_file(path: &str) -> Result<Vec<Rule>> {
 }
 
 fn parse_str(source: &str) -> Result<Vec<Rule>> {
-    parse_tokens(tokenize(source)?)
+    // parse_tokens(tokenize(source)?)
+    file(tokenize(source)?)
 }
 
 fn parse_tokens(tokens: Vec<RuleToken>) -> Result<Vec<Rule>> {
