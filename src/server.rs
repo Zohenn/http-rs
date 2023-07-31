@@ -387,7 +387,6 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
 }
 
 fn apply_rules(rules: &[Rule], request: &Request, response: Response) -> Response {
-    println!("{rules:?}");
     let mut out_response = response;
 
     for rule in rules {
@@ -399,37 +398,6 @@ fn apply_rules(rules: &[Rule], request: &Request, response: Response) -> Respons
             RuleEvaluationResult::Continue(response) => out_response = response,
             RuleEvaluationResult::Finish(response) => return response,
         }
-        // if request
-        //     .url
-        //     .matches(&rule.pattern)
-        //     .collect::<Vec<&str>>()
-        //     .is_empty()
-        // {
-        //     continue;
-        // }
-        //
-        // for action in &rule.actions {
-        //     match action {
-        //         RuleAction::SetHeader(header_name, header_value) => {
-        //             out_response.set_header(header_name, header_value);
-        //         }
-        //         RuleAction::RedirectReturn(response_code, location) => {
-        //             out_response.set_status_code(*response_code);
-        //             out_response.set_header("Location", location);
-        //
-        //             return out_response;
-        //         }
-        //         RuleAction::CustomReturn(response_code, additional_data) => {
-        //             out_response.set_status_code(*response_code);
-        //
-        //             if let Some(body) = additional_data {
-        //                 out_response.set_body(body.clone().into_bytes());
-        //             }
-        //
-        //             return out_response;
-        //         }
-        //     }
-        // }
     }
 
     out_response

@@ -1,9 +1,9 @@
 matches / {
-    set_header "Server" "http-rs";
+    set_header("Server", "http-rs");
 }
 
 matches /index2.html {
-    return 301 "/index.html";
+    redirect 301 "/index.html";
 }
 
 matches /index3.html {

@@ -46,7 +46,7 @@ impl Rule {
                         }
                     }
                 }
-                StatementKind::ReturnRedirect(response_code, location) => {
+                StatementKind::Redirect(response_code, location) => {
                     out_response.set_status_code(*response_code);
                     out_response.set_header("Location", location);
 
@@ -56,7 +56,11 @@ impl Rule {
                     out_response.set_status_code(*response_code);
 
                     if let Some(body) = additional_data {
-                        out_response.set_body(body.clone().into_bytes());
+                        let body_bytes = body.clone().into_bytes();
+                        let body_len = body_bytes.len();
+
+                        out_response.set_body(body_bytes);
+                        out_response.set_header("Content-Length", &body_len.to_string());
                     }
 
                     return RuleEvaluationResult::Finish(out_response);

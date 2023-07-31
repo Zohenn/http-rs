@@ -21,8 +21,8 @@ pub enum Expr {
 #[derive(Debug)]
 pub enum StatementKind {
     Func(String, Vec<Lit>),
+    Redirect(ResponseStatusCode, String),
     Return(ResponseStatusCode, Option<String>),
-    ReturnRedirect(ResponseStatusCode, String),
 }
 
 #[derive(Debug)]
@@ -71,6 +71,7 @@ pub fn rule_statements(iter: &mut TokenIter) -> Result<Vec<Statement>> {
     while let Some(token) = iter.peek() {
         let statement = match token {
             RuleToken::Ident(_) => base_statement(iter)?,
+            RuleToken::Redirect => redirect_statement(iter)?,
             RuleToken::Return => return_statement(iter)?,
             RuleToken::RBrace => break,
             _ => return Err(format!("Unexpected token {token:?}").into()),
@@ -82,18 +83,6 @@ pub fn rule_statements(iter: &mut TokenIter) -> Result<Vec<Statement>> {
             }
             _ => statements.push(statement),
         }
-        // match token {
-        //     RuleToken::Ident(_) => {
-        //         let statement = base_statement(iter)?;
-        //
-        //         match statements.last() {
-        //             Some(stmt) if matches!(stmt.kind, StatementKind::Return(_, _)) => return Err("Unexpected statement after return".into()),
-        //             _ => statements.push(statement)
-        //         }
-        //     },
-        //     RuleToken::Return => statements.push(return_statement(iter)),
-        //     _ => {},
-        // }
     }
 
     Ok(statements)
@@ -104,17 +93,27 @@ pub fn base_statement(iter: &mut TokenIter) -> Result<Statement> {
         Some(RuleToken::Ident(name)) => {
             let mut args: Vec<Lit> = vec![];
 
+            swallow(iter, RuleToken::LParen)?;
+
             while let Some(token) = iter.peek() {
                 match token {
-                    RuleToken::LitStr(str_val) => args.push(Lit::String(str_val.clone())),
-                    RuleToken::LitInt(int_val) => args.push(Lit::Int(int_val.clone())),
-                    RuleToken::Semicolon => break,
+                    RuleToken::LitStr(str_val) => {
+                        args.push(Lit::String(str_val.clone()));
+                        iter.next();
+                    }
+                    RuleToken::LitInt(int_val) => {
+                        args.push(Lit::Int(int_val.clone()));
+                        iter.next();
+                    }
+                    RuleToken::Comma => {
+                        swallow(iter, RuleToken::Comma)?;
+                    }
+                    RuleToken::RParen => break,
                     _ => return Err(format!("Unexpected token {token:?}").into()),
                 }
-
-                iter.next();
             }
 
+            swallow(iter, RuleToken::RParen)?;
             swallow(iter, RuleToken::Semicolon)?;
 
             Statement {
@@ -122,6 +121,36 @@ pub fn base_statement(iter: &mut TokenIter) -> Result<Statement> {
             }
         }
         Some(_) => todo!(),
+        _ => unreachable!(),
+    };
+
+    Ok(statement)
+}
+
+pub fn redirect_statement(iter: &mut TokenIter) -> Result<Statement> {
+    let statement = match iter.next() {
+        Some(RuleToken::Redirect) => {
+            let response_code = match int(iter)? {
+                RuleToken::LitInt(int_val) => int_val
+                    .parse::<u16>()
+                    .map_err(|_| "Incorrect response code")?,
+                _ => unreachable!(),
+            };
+            let response_code = ResponseStatusCode::try_from(response_code)?;
+
+            let location = match string(iter)? {
+                RuleToken::LitStr(str_val) => str_val,
+                _ => unreachable!(),
+            };
+
+            let statement = Statement {
+                kind: StatementKind::Redirect(response_code, location),
+            };
+
+            swallow(iter, RuleToken::Semicolon)?;
+
+            statement
+        }
         _ => unreachable!(),
     };
 
@@ -144,17 +173,8 @@ pub fn return_statement(iter: &mut TokenIter) -> Result<Statement> {
                 _ => unreachable!(),
             });
 
-            let statement = if response_code.is_redirect() {
-                let location = location_or_body.ok_or::<Box<dyn Error>>(
-                    "Return with redirect must be followed with location url".into(),
-                )?;
-                Statement {
-                    kind: StatementKind::ReturnRedirect(response_code, location),
-                }
-            } else {
-                Statement {
-                    kind: StatementKind::Return(response_code, location_or_body),
-                }
+            let statement = Statement {
+                kind: StatementKind::Return(response_code, location_or_body),
             };
 
             swallow(iter, RuleToken::Semicolon)?;

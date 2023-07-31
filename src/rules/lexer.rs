@@ -8,6 +8,9 @@ pub enum RuleToken {
 
     LBrace,
     RBrace,
+    LParen,
+    RParen,
+    Comma,
     Semicolon,
 
     // literals
@@ -16,6 +19,7 @@ pub enum RuleToken {
 
     // keywords
     Matches,
+    Redirect,
     Return,
 
     Eof,
@@ -33,6 +37,9 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
         let token = match character {
             '{' => RuleToken::LBrace,
             '}' => RuleToken::RBrace,
+            '(' => RuleToken::LParen,
+            ')' => RuleToken::RParen,
+            ',' => RuleToken::Comma,
             '"' => {
                 let lit = read_string(&mut iter)?;
 
@@ -45,6 +52,7 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
 
                 match &*ident {
                     "matches" => RuleToken::Matches,
+                    "redirect" => RuleToken::Redirect,
                     "return" => RuleToken::Return,
                     _ => RuleToken::Ident(ident),
                 }
@@ -141,7 +149,7 @@ mod test {
         let tokens = tokenize(
             r#"
             matches /index.html {
-                set_header "Server" "http-rs";
+                set_header("Server", "http-rs");
                 return 301 "/index2.html";
             }
         "#,
@@ -153,8 +161,11 @@ mod test {
             RuleToken::LitStr("/index.html".into()),
             RuleToken::LBrace,
             RuleToken::Ident("set_header".into()),
+            RuleToken::LParen,
             RuleToken::LitStr("Server".into()),
+            RuleToken::Comma,
             RuleToken::LitStr("http-rs".into()),
+            RuleToken::RParen,
             RuleToken::Semicolon,
             RuleToken::Return,
             RuleToken::LitInt("301".into()),
