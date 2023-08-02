@@ -1,12 +1,12 @@
 use crate::response_status_code::ResponseStatusCode;
-use crate::rules::lexer::RuleToken;
+use crate::rules::lexer::RuleTokenKind;
 use crate::rules::Rule;
 use std::error::Error;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-type TokenIter = Peekable<IntoIter<RuleToken>>;
+type TokenIter = Peekable<IntoIter<RuleTokenKind>>;
 
 #[derive(Debug)]
 pub enum Lit {
@@ -30,7 +30,7 @@ pub struct Statement {
     pub kind: StatementKind,
 }
 
-pub fn file(tokens: Vec<RuleToken>) -> Result<Vec<Rule>> {
+pub fn file(tokens: Vec<RuleTokenKind>) -> Result<Vec<Rule>> {
     let mut rules: Vec<Rule> = vec![];
 
     let mut iter = tokens.into_iter().peekable();
@@ -43,18 +43,18 @@ pub fn file(tokens: Vec<RuleToken>) -> Result<Vec<Rule>> {
 }
 
 pub fn rule(iter: &mut TokenIter) -> Result<Rule> {
-    swallow(iter, RuleToken::Matches)?;
+    swallow(iter, RuleTokenKind::Matches)?;
 
     let pattern = match pattern(iter)? {
-        RuleToken::LitStr(pattern) => pattern,
+        RuleTokenKind::LitStr(pattern) => pattern,
         _ => unreachable!(),
     };
 
-    swallow(iter, RuleToken::LBrace)?;
+    swallow(iter, RuleTokenKind::LBrace)?;
 
     let statements = rule_statements(iter)?;
 
-    swallow(iter, RuleToken::RBrace)?;
+    swallow(iter, RuleTokenKind::RBrace)?;
 
     let rule = Rule {
         pattern,
@@ -70,10 +70,10 @@ pub fn rule_statements(iter: &mut TokenIter) -> Result<Vec<Statement>> {
 
     while let Some(token) = iter.peek() {
         let statement = match token {
-            RuleToken::Ident(_) => base_statement(iter)?,
-            RuleToken::Redirect => redirect_statement(iter)?,
-            RuleToken::Return => return_statement(iter)?,
-            RuleToken::RBrace => break,
+            RuleTokenKind::Ident(_) => base_statement(iter)?,
+            RuleTokenKind::Redirect => redirect_statement(iter)?,
+            RuleTokenKind::Return => return_statement(iter)?,
+            RuleTokenKind::RBrace => break,
             _ => return Err(format!("Unexpected token {token:?}").into()),
         };
 
@@ -90,31 +90,31 @@ pub fn rule_statements(iter: &mut TokenIter) -> Result<Vec<Statement>> {
 
 pub fn base_statement(iter: &mut TokenIter) -> Result<Statement> {
     let statement = match iter.next() {
-        Some(RuleToken::Ident(name)) => {
+        Some(RuleTokenKind::Ident(name)) => {
             let mut args: Vec<Lit> = vec![];
 
-            swallow(iter, RuleToken::LParen)?;
+            swallow(iter, RuleTokenKind::LParen)?;
 
             while let Some(token) = iter.peek() {
                 match token {
-                    RuleToken::LitStr(str_val) => {
+                    RuleTokenKind::LitStr(str_val) => {
                         args.push(Lit::String(str_val.clone()));
                         iter.next();
                     }
-                    RuleToken::LitInt(int_val) => {
+                    RuleTokenKind::LitInt(int_val) => {
                         args.push(Lit::Int(int_val.clone()));
                         iter.next();
                     }
-                    RuleToken::Comma => {
-                        swallow(iter, RuleToken::Comma)?;
+                    RuleTokenKind::Comma => {
+                        swallow(iter, RuleTokenKind::Comma)?;
                     }
-                    RuleToken::RParen => break,
+                    RuleTokenKind::RParen => break,
                     _ => return Err(format!("Unexpected token {token:?}").into()),
                 }
             }
 
-            swallow(iter, RuleToken::RParen)?;
-            swallow(iter, RuleToken::Semicolon)?;
+            swallow(iter, RuleTokenKind::RParen)?;
+            swallow(iter, RuleTokenKind::Semicolon)?;
 
             Statement {
                 kind: StatementKind::Func(name, args),
@@ -129,9 +129,9 @@ pub fn base_statement(iter: &mut TokenIter) -> Result<Statement> {
 
 pub fn redirect_statement(iter: &mut TokenIter) -> Result<Statement> {
     let statement = match iter.next() {
-        Some(RuleToken::Redirect) => {
+        Some(RuleTokenKind::Redirect) => {
             let response_code = match int(iter)? {
-                RuleToken::LitInt(int_val) => int_val
+                RuleTokenKind::LitInt(int_val) => int_val
                     .parse::<u16>()
                     .map_err(|_| "Incorrect response code")?,
                 _ => unreachable!(),
@@ -139,7 +139,7 @@ pub fn redirect_statement(iter: &mut TokenIter) -> Result<Statement> {
             let response_code = ResponseStatusCode::try_from(response_code)?;
 
             let location = match string(iter)? {
-                RuleToken::LitStr(str_val) => str_val,
+                RuleTokenKind::LitStr(str_val) => str_val,
                 _ => unreachable!(),
             };
 
@@ -147,7 +147,7 @@ pub fn redirect_statement(iter: &mut TokenIter) -> Result<Statement> {
                 kind: StatementKind::Redirect(response_code, location),
             };
 
-            swallow(iter, RuleToken::Semicolon)?;
+            swallow(iter, RuleTokenKind::Semicolon)?;
 
             statement
         }
@@ -159,9 +159,9 @@ pub fn redirect_statement(iter: &mut TokenIter) -> Result<Statement> {
 
 pub fn return_statement(iter: &mut TokenIter) -> Result<Statement> {
     let statement = match iter.next() {
-        Some(RuleToken::Return) => {
+        Some(RuleTokenKind::Return) => {
             let response_code = match int(iter)? {
-                RuleToken::LitInt(int_val) => int_val
+                RuleTokenKind::LitInt(int_val) => int_val
                     .parse::<u16>()
                     .map_err(|_| "Incorrect response code")?,
                 _ => unreachable!(),
@@ -169,7 +169,7 @@ pub fn return_statement(iter: &mut TokenIter) -> Result<Statement> {
             let response_code = ResponseStatusCode::try_from(response_code)?;
 
             let location_or_body = string(iter).ok().map(|token| match token {
-                RuleToken::LitStr(str_val) => str_val,
+                RuleTokenKind::LitStr(str_val) => str_val,
                 _ => unreachable!(),
             });
 
@@ -177,7 +177,7 @@ pub fn return_statement(iter: &mut TokenIter) -> Result<Statement> {
                 kind: StatementKind::Return(response_code, location_or_body),
             };
 
-            swallow(iter, RuleToken::Semicolon)?;
+            swallow(iter, RuleTokenKind::Semicolon)?;
 
             statement
         }
@@ -189,7 +189,7 @@ pub fn return_statement(iter: &mut TokenIter) -> Result<Statement> {
 
 macro_rules! rule_helper {
     ($name:ident, $variant:pat) => {
-        pub fn $name(iter: &mut TokenIter) -> Result<RuleToken> {
+        pub fn $name(iter: &mut TokenIter) -> Result<RuleTokenKind> {
             match iter.peek() {
                 Some($variant) => Ok(iter.next().unwrap()),
                 Some(token) => Err(format!(concat!("Expected ", stringify!($name), ", got {:?}"), token).into()),
@@ -199,12 +199,12 @@ macro_rules! rule_helper {
     }
 }
 
-rule_helper!(pattern, RuleToken::LitStr(_));
-rule_helper!(ident, RuleToken::Ident(_));
-rule_helper!(int, RuleToken::LitInt(_));
-rule_helper!(string, RuleToken::LitStr(_));
+rule_helper!(pattern, RuleTokenKind::LitStr(_));
+rule_helper!(ident, RuleTokenKind::Ident(_));
+rule_helper!(int, RuleTokenKind::LitInt(_));
+rule_helper!(string, RuleTokenKind::LitStr(_));
 
-fn swallow(iter: &mut TokenIter, to_swallow: RuleToken) -> Result<RuleToken> {
+fn swallow(iter: &mut TokenIter, to_swallow: RuleTokenKind) -> Result<RuleTokenKind> {
     match iter.peek() {
         Some(token) => {
             if matches!(token, to_swallow) {

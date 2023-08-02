@@ -1,6 +1,6 @@
 use crate::response_status_code::ResponseStatusCode;
 use crate::rules::grammar::file;
-use crate::rules::lexer::{tokenize, RuleToken};
+use crate::rules::lexer::{tokenize, RuleTokenKind};
 use crate::rules::{Rule, RuleAction};
 use std::fs::File;
 use std::io::Read;
@@ -27,7 +27,7 @@ fn parse_str(source: &str) -> Result<Vec<Rule>> {
     file(tokenize(source)?)
 }
 
-fn parse_tokens(tokens: Vec<RuleToken>) -> Result<Vec<Rule>> {
+fn parse_tokens(tokens: Vec<RuleTokenKind>) -> Result<Vec<Rule>> {
     let mut rules: Vec<Rule> = vec![];
 
     if tokens.is_empty() {
@@ -44,11 +44,11 @@ fn parse_tokens(tokens: Vec<RuleToken>) -> Result<Vec<Rule>> {
             RuleParseState::None => {
                 let tokens_until_lbrace = token_iter
                     .by_ref()
-                    .take_while(|token| !matches!(token, RuleToken::LBrace))
-                    .collect::<Vec<&RuleToken>>();
+                    .take_while(|token| !matches!(token, RuleTokenKind::LBrace))
+                    .collect::<Vec<&RuleTokenKind>>();
 
                 match tokens_until_lbrace[..] {
-                    [RuleToken::Matches, RuleToken::LitStr(pattern)] => {
+                    [RuleTokenKind::Matches, RuleTokenKind::LitStr(pattern)] => {
                         rule_builder = rule_builder.pattern(pattern.into());
                         state = RuleParseState::HasPattern;
                     }
@@ -62,7 +62,7 @@ fn parse_tokens(tokens: Vec<RuleToken>) -> Result<Vec<Rule>> {
                 }
             }
             RuleParseState::HasPattern => match next_token {
-                RuleToken::RBrace => {
+                RuleTokenKind::RBrace => {
                     token_iter.next();
 
                     rules.push(rule_builder.get());
@@ -72,17 +72,17 @@ fn parse_tokens(tokens: Vec<RuleToken>) -> Result<Vec<Rule>> {
                 _ => {
                     let tokens_until_semicolon = token_iter
                         .by_ref()
-                        .take_while(|token| !matches!(token, RuleToken::Semicolon))
-                        .collect::<Vec<&RuleToken>>();
+                        .take_while(|token| !matches!(token, RuleTokenKind::Semicolon))
+                        .collect::<Vec<&RuleTokenKind>>();
 
                     let action = match tokens_until_semicolon[..] {
-                        [RuleToken::Return, RuleToken::LitInt(response_code), RuleToken::LitStr(location)] => {
+                        [RuleTokenKind::Return, RuleTokenKind::LitInt(response_code), RuleTokenKind::LitStr(location)] => {
                             parse_return(response_code, Some(location))?
                         }
-                        [RuleToken::Return, RuleToken::LitInt(response_code)] => {
+                        [RuleTokenKind::Return, RuleTokenKind::LitInt(response_code)] => {
                             parse_return(response_code, None)?
                         }
-                        [RuleToken::Ident(function), RuleToken::LitStr(arg1), RuleToken::LitStr(arg2)] => {
+                        [RuleTokenKind::Ident(function), RuleTokenKind::LitStr(arg1), RuleTokenKind::LitStr(arg2)] => {
                             parse_2_arg_function(function, arg1, arg2)?
                         }
                         _ => {
