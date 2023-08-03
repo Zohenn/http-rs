@@ -1,7 +1,9 @@
+use crate::rules::error::{RuleError, SyntaxErrorKind};
+use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
 use std::str::Chars;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, RuleError>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuleTokenKind {
@@ -26,17 +28,69 @@ pub enum RuleTokenKind {
     Eof,
 }
 
+impl RuleTokenKind {
+    fn len(&self) -> u16 {
+        match self {
+            RuleTokenKind::Ident(val) => val.len() as u16,
+            RuleTokenKind::LBrace => 1,
+            RuleTokenKind::RBrace => 1,
+            RuleTokenKind::LParen => 1,
+            RuleTokenKind::RParen => 1,
+            RuleTokenKind::Comma => 1,
+            RuleTokenKind::Semicolon => 1,
+            RuleTokenKind::LitStr(val) => val.len() as u16, // + 2 to account for "?
+            RuleTokenKind::LitInt(val) => val.len() as u16,
+            RuleTokenKind::Matches => 1,
+            RuleTokenKind::Redirect => 1,
+            RuleTokenKind::Return => 1,
+            RuleTokenKind::Eof => 0,
+        }
+    }
+}
+
+impl Display for RuleTokenKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let str_value = match self {
+            RuleTokenKind::Ident(s) => &s,
+            RuleTokenKind::LBrace => "{",
+            RuleTokenKind::RBrace => "}",
+            RuleTokenKind::LParen => "(",
+            RuleTokenKind::RParen => ")",
+            RuleTokenKind::Comma => ",",
+            RuleTokenKind::Semicolon => ";",
+            RuleTokenKind::LitStr(s) => &s,
+            RuleTokenKind::LitInt(s) => &s,
+            RuleTokenKind::Matches => "matches",
+            RuleTokenKind::Redirect => "redirect",
+            RuleTokenKind::Return => "return",
+            RuleTokenKind::Eof => "EOF",
+        };
+
+        write!(f, "{}", str_value)
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct Position {
-    line: u32,
-    column: u32,
-    len: u16,
+    pub line: u32,
+    pub column: u32,
+    pub len: u16,
+}
+
+impl Position {
+    pub fn zero() -> Self {
+        Position {
+            line: 0,
+            column: 0,
+            len: 0,
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct RuleToken {
-    kind: RuleTokenKind,
-    position: Position,
+    pub kind: RuleTokenKind,
+    pub position: Position,
 }
 
 struct LexerIter<'a> {
@@ -100,7 +154,10 @@ impl<'a> LexerIter<'a> {
 
                 Ok(lit)
             }
-            _ => Err(format!("Unterminated string {:?}", self.position).into()),
+            _ => Err(RuleError::syntax(
+                SyntaxErrorKind::UnterminatedString,
+                self.position,
+            )),
         }
     }
 
@@ -110,7 +167,10 @@ impl<'a> LexerIter<'a> {
         match next {
             Some(c) if c.is_ascii_whitespace() => Ok(lit),
             None => Ok(lit),
-            _ => Err(format!("Unexpected token {:?}", self.position).into()),
+            Some(c) => Err(RuleError::syntax(
+                SyntaxErrorKind::UnexpectedToken(c.into()),
+                self.position,
+            )),
         }
     }
 
@@ -136,10 +196,10 @@ impl<'a> LexerIter<'a> {
     }
 }
 
-pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleTokenKind>> {
+pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
     let mut iter = LexerIter::new(input);
 
-    let mut tokens: Vec<RuleTokenKind> = vec![];
+    let mut tokens: Vec<RuleToken> = vec![];
 
     iter.skip_whitespace();
 
@@ -174,19 +234,35 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleTokenKind>> {
 
                 RuleTokenKind::LitInt(lit)
             }
-            _ => return Err(format!("Unexpected token: {} {:?}", character, position).into()),
+            _ => {
+                return Err(RuleError::syntax(
+                    SyntaxErrorKind::UnexpectedToken(character.into()),
+                    position,
+                ))
+            }
         };
 
-        tokens.push(token);
+        tokens.push(RuleToken {
+            kind: token,
+            position: position,
+        });
 
         // todo: change this in some way, lexer is not the best place for this
         // either change the grammar and make pattern be a normal " delimited string
         // or store info on whether next character after token is whitespace
         // and take all grouped (not separated by whitespace) tokens when parsing a rule
-        if let Some(RuleTokenKind::Matches) = tokens.last() {
-            iter.skip_whitespace();
-            tokens.push(RuleTokenKind::LitStr(iter.read_until_whitespace()));
-        };
+        match tokens.last() {
+            Some(token) if matches!(token.kind, RuleTokenKind::Matches) => {
+                iter.skip_whitespace();
+                let position = iter.position;
+
+                tokens.push(RuleToken {
+                    kind: RuleTokenKind::LitStr(iter.read_until_whitespace()),
+                    position: position,
+                });
+            }
+            _ => {}
+        }
 
         iter.skip_whitespace();
     }
@@ -231,7 +307,7 @@ mod test {
         for (index, token) in tokens.iter().enumerate() {
             let expected = expected_tokens.get(index).unwrap_or(&RuleTokenKind::Eof);
             println!("expected: {expected:?}, got: {token:?}");
-            assert_eq!(token, expected);
+            assert_eq!(&token.kind, expected);
         }
     }
 

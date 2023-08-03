@@ -30,7 +30,7 @@ impl Server {
                 match parse_file(config.rules_path.as_ref().unwrap()) {
                     Ok(rules) => rules,
                     Err(e) => {
-                        error!("Error parsing rules file: {e:?}");
+                        error!("Error parsing rules file: {e}");
                         vec![]
                     }
                 }
