@@ -73,6 +73,10 @@ impl RuleError {
             position,
         }
     }
+
+    pub fn position(&self) -> &Position {
+        &self.position
+    }
 }
 
 impl Display for RuleError {
