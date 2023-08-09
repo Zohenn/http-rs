@@ -10,14 +10,12 @@ use std::vec::IntoIter;
 type Result<T> = std::result::Result<T, RuleError>;
 type TokenIter = Peekable<IntoIter<RuleToken>>;
 
+static EOF_TOKEN: RuleToken = RuleToken::eof();
+
 #[derive(Debug)]
 pub enum Lit {
     String(String),
     Int(String),
-}
-
-pub enum Expr {
-    Lit(Lit),
 }
 
 #[derive(Debug)]
@@ -235,6 +233,119 @@ fn status_code(iter: &mut TokenIter) -> Result<ResponseStatusCode> {
 
     Ok(response_code)
 }
+#[derive(Debug)]
+pub enum Operator {
+    And,
+    Or,
+    Eq,
+    NotEq,
+}
+
+#[derive(Debug)]
+pub enum ExprOrValue {
+    Expr(Expr),
+    Value(RuleToken),
+}
+
+#[derive(Debug)]
+pub struct Expr {
+    lhs: Box<ExprOrValue>,
+    operator: Operator,
+    rhs: Box<ExprOrValue>,
+}
+
+fn expr(iter: &mut TokenIter) -> Result<ExprOrValue> {
+    bool_expr(iter)
+}
+
+fn bool_expr(iter: &mut TokenIter) -> Result<ExprOrValue> {
+    let mut lhs = cmp_expr(iter)?;
+
+    match iter.peek() {
+        Some(token) if matches!(token.kind, RuleTokenKind::And | RuleTokenKind::Or) => {}
+        _ => return Ok(lhs),
+    }
+
+    while let Ok(token) = swallow_any(iter, vec![RuleTokenKind::And, RuleTokenKind::Or]) {
+        let operator = match token.kind {
+            RuleTokenKind::And => Operator::And,
+            RuleTokenKind::Or => Operator::Or,
+            _ => unreachable!("{:?}", token),
+        };
+
+        let rhs = cmp_expr(iter)?;
+
+        lhs = ExprOrValue::Expr(Expr {
+            lhs: lhs.into(),
+            operator,
+            rhs: rhs.into(),
+        });
+    }
+
+    Ok(lhs)
+}
+
+fn cmp_expr(iter: &mut TokenIter) -> Result<ExprOrValue> {
+    let lhs = primary(iter)?;
+
+    match iter.peek() {
+        Some(token) if matches!(token.kind, RuleTokenKind::Eq | RuleTokenKind::NotEq) => {}
+        _ => return Ok(lhs),
+    }
+
+    let operator = match swallow_any(iter, vec![RuleTokenKind::Eq, RuleTokenKind::NotEq])
+        .unwrap()
+        .kind
+    {
+        RuleTokenKind::Eq => Operator::Eq,
+        RuleTokenKind::NotEq => Operator::NotEq,
+        _ => unreachable!(),
+    };
+    let rhs = primary(iter)?;
+
+    Ok(ExprOrValue::Expr(Expr {
+        lhs: lhs.into(),
+        operator,
+        rhs: rhs.into(),
+    }))
+}
+
+fn primary(iter: &mut TokenIter) -> Result<ExprOrValue> {
+    let next = iter.peek();
+    match next {
+        Some(token) if token.kind == RuleTokenKind::LParen => {
+            swallow(iter, RuleTokenKind::LParen)?;
+            let expr = expr(iter)?;
+            swallow(iter, RuleTokenKind::RParen)?;
+
+            Ok(expr)
+        }
+        Some(token) if token.kind.is_lit() || matches!(token.kind, RuleTokenKind::Ident(_)) => {
+            Ok(ExprOrValue::Value(iter.next().unwrap()))
+        }
+        _ => {
+            let next = iter.peek().unwrap_or(&EOF_TOKEN);
+            Err(RuleError::syntax(
+                SyntaxErrorKind::UnexpectedToken(next.kind.to_string()),
+                next.position,
+            ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::rules::grammar::expr;
+    use crate::rules::lexer::tokenize;
+
+    #[test]
+    fn test() {
+        let src = "abc == 123 && x != \"string\" || (a == 1 && b == 2) || (a || b)";
+        let mut iter = tokenize(src).unwrap().into_iter().peekable();
+        let res = expr(&mut iter);
+        println!("{:?}", res.unwrap());
+    }
+}
 
 macro_rules! rule_helper {
     ($name:ident, $variant:pat, $expected:literal) => {
@@ -246,11 +357,8 @@ macro_rules! rule_helper {
                     token.position,
                 )),
                 _ => Err(RuleError::syntax(
-                    SyntaxErrorKind::ExpectedOther(
-                        $expected.into(),
-                        RuleTokenKind::Eof.to_string(),
-                    ),
-                    Position::zero(),
+                    SyntaxErrorKind::ExpectedOther($expected.into(), EOF_TOKEN.kind.to_string()),
+                    EOF_TOKEN.position,
                 )),
             }
         }
@@ -265,7 +373,9 @@ rule_helper!(string, RuleTokenKind::LitStr(_), "string");
 fn swallow(iter: &mut TokenIter, to_swallow: RuleTokenKind) -> Result<RuleToken> {
     match iter.peek() {
         Some(token) => {
-            if matches!(&token.kind, to_swallow) {
+            // if matches!(&token.kind, to_swallow) {
+            if std::mem::discriminant(&token.kind) == std::mem::discriminant(&to_swallow) {
+                println!("token {token:?}, to_swallow {to_swallow:?}");
                 Ok(iter.next().unwrap())
             } else {
                 Err(RuleError::syntax(
@@ -275,8 +385,23 @@ fn swallow(iter: &mut TokenIter, to_swallow: RuleTokenKind) -> Result<RuleToken>
             }
         }
         _ => Err(RuleError::syntax(
-            SyntaxErrorKind::ExpectedOther(to_swallow.to_string(), RuleTokenKind::Eof.to_string()),
-            Position::zero(),
+            SyntaxErrorKind::ExpectedOther(to_swallow.to_string(), EOF_TOKEN.kind.to_string()),
+            EOF_TOKEN.position,
         )),
     }
+}
+
+fn swallow_any(iter: &mut TokenIter, to_swallow: Vec<RuleTokenKind>) -> Result<RuleToken> {
+    for token in to_swallow.iter() {
+        if let Ok(t) = swallow(iter, token.clone()) {
+            return Ok(t);
+        }
+    }
+
+    let next = iter.peek().unwrap_or(&EOF_TOKEN);
+
+    Err(RuleError::syntax(
+        SyntaxErrorKind::ExpectedOther(format!("one of {:?}", to_swallow), next.kind.to_string()),
+        next.position,
+    ))
 }

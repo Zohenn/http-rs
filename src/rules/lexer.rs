@@ -15,6 +15,10 @@ pub enum RuleTokenKind {
     RParen,
     Comma,
     Semicolon,
+    Eq,
+    NotEq,
+    And,
+    Or,
 
     // literals
     LitStr(String),
@@ -29,7 +33,7 @@ pub enum RuleTokenKind {
 }
 
 impl RuleTokenKind {
-    fn len(&self) -> u16 {
+    pub fn len(&self) -> u16 {
         match self {
             RuleTokenKind::Ident(val) => val.len() as u16,
             RuleTokenKind::LBrace => 1,
@@ -38,6 +42,10 @@ impl RuleTokenKind {
             RuleTokenKind::RParen => 1,
             RuleTokenKind::Comma => 1,
             RuleTokenKind::Semicolon => 1,
+            RuleTokenKind::Eq => 2,
+            RuleTokenKind::NotEq => 2,
+            RuleTokenKind::And => 2,
+            RuleTokenKind::Or => 2,
             RuleTokenKind::LitStr(val) => val.len() as u16, // + 2 to account for "?
             RuleTokenKind::LitInt(val) => val.len() as u16,
             RuleTokenKind::Matches => 1,
@@ -45,6 +53,10 @@ impl RuleTokenKind {
             RuleTokenKind::Return => 1,
             RuleTokenKind::Eof => 0,
         }
+    }
+
+    pub fn is_lit(&self) -> bool {
+        matches!(self, RuleTokenKind::LitInt(_) | RuleTokenKind::LitStr(_))
     }
 }
 
@@ -58,6 +70,10 @@ impl Display for RuleTokenKind {
             RuleTokenKind::RParen => ")",
             RuleTokenKind::Comma => ",",
             RuleTokenKind::Semicolon => ";",
+            RuleTokenKind::Eq => "==",
+            RuleTokenKind::NotEq => "!=",
+            RuleTokenKind::And => "&&",
+            RuleTokenKind::Or => "||",
             RuleTokenKind::LitStr(s) => &s,
             RuleTokenKind::LitInt(s) => &s,
             RuleTokenKind::Matches => "matches",
@@ -78,7 +94,7 @@ pub struct Position {
 }
 
 impl Position {
-    pub fn zero() -> Self {
+    pub const fn zero() -> Self {
         Position {
             line: 0,
             column: 0,
@@ -91,6 +107,15 @@ impl Position {
 pub struct RuleToken {
     pub kind: RuleTokenKind,
     pub position: Position,
+}
+
+impl RuleToken {
+    pub const fn eof() -> Self {
+        RuleToken {
+            kind: RuleTokenKind::Eof,
+            position: Position::zero(),
+        }
+    }
 }
 
 struct LexerIter<'a> {
@@ -165,7 +190,7 @@ impl<'a> LexerIter<'a> {
         let (lit, next) = self.read_until_inner(|next: &char| next.is_ascii_digit());
 
         match next {
-            Some(c) if c.is_ascii_whitespace() => Ok(lit),
+            Some(c) if !c.is_ascii_alphabetic() => Ok(lit),
             None => Ok(lit),
             Some(c) => Err(RuleError::syntax(
                 SyntaxErrorKind::UnexpectedToken(c.into()),
@@ -218,6 +243,54 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
                 RuleTokenKind::LitStr(lit)
             }
             ';' => RuleTokenKind::Semicolon,
+            '=' => match iter.peek() {
+                Some(c) if c == &'=' => {
+                    iter.next();
+                    RuleTokenKind::Eq
+                }
+                _ => {
+                    return Err(RuleError::syntax(
+                        SyntaxErrorKind::UnexpectedToken(character.into()),
+                        position,
+                    ))
+                }
+            },
+            '!' => match iter.peek() {
+                Some(c) if c == &'=' => {
+                    iter.next();
+                    RuleTokenKind::NotEq
+                }
+                _ => {
+                    return Err(RuleError::syntax(
+                        SyntaxErrorKind::UnexpectedToken(character.into()),
+                        position,
+                    ))
+                }
+            },
+            '&' => match iter.peek() {
+                Some(c) if c == &'&' => {
+                    iter.next();
+                    RuleTokenKind::And
+                }
+                _ => {
+                    return Err(RuleError::syntax(
+                        SyntaxErrorKind::UnexpectedToken(character.into()),
+                        position,
+                    ))
+                }
+            },
+            '|' => match iter.peek() {
+                Some(c) if c == &'|' => {
+                    iter.next();
+                    RuleTokenKind::Or
+                }
+                _ => {
+                    return Err(RuleError::syntax(
+                        SyntaxErrorKind::UnexpectedToken(character.into()),
+                        position,
+                    ))
+                }
+            },
             'a'..='z' | 'A'..='Z' | '_' => {
                 let ident = String::from(character);
                 let ident = ident + &iter.read_ident();
@@ -280,6 +353,7 @@ mod test {
             r#"
             matches /index.html {
                 set_header("Server", "http-rs");
+                abc == 123;
                 return 301 "/index2.html";
             }
         "#,
@@ -296,6 +370,10 @@ mod test {
             RuleTokenKind::Comma,
             RuleTokenKind::LitStr("http-rs".into()),
             RuleTokenKind::RParen,
+            RuleTokenKind::Semicolon,
+            RuleTokenKind::Ident("abc".into()),
+            RuleTokenKind::Eq,
+            RuleTokenKind::LitInt("123".into()),
             RuleTokenKind::Semicolon,
             RuleTokenKind::Return,
             RuleTokenKind::LitInt("301".into()),
