@@ -65,6 +65,9 @@ impl Rule {
 
                     return RuleEvaluationResult::Finish(out_response);
                 }
+                StatementKind::If(condition_expr, statements) => {
+                    todo!()
+                }
             }
         }
 

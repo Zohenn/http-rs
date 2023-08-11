@@ -28,6 +28,7 @@ pub enum RuleTokenKind {
     Matches,
     Redirect,
     Return,
+    If,
 
     Eof,
 }
@@ -48,9 +49,10 @@ impl RuleTokenKind {
             RuleTokenKind::Or => 2,
             RuleTokenKind::LitStr(val) => val.len() as u16, // + 2 to account for "?
             RuleTokenKind::LitInt(val) => val.len() as u16,
-            RuleTokenKind::Matches => 1,
-            RuleTokenKind::Redirect => 1,
-            RuleTokenKind::Return => 1,
+            RuleTokenKind::Matches => 7,
+            RuleTokenKind::Redirect => 8,
+            RuleTokenKind::Return => 6,
+            RuleTokenKind::If => 2,
             RuleTokenKind::Eof => 0,
         }
     }
@@ -63,7 +65,7 @@ impl RuleTokenKind {
 impl Display for RuleTokenKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let str_value = match self {
-            RuleTokenKind::Ident(s) => &s,
+            RuleTokenKind::Ident(s) => s,
             RuleTokenKind::LBrace => "{",
             RuleTokenKind::RBrace => "}",
             RuleTokenKind::LParen => "(",
@@ -74,11 +76,12 @@ impl Display for RuleTokenKind {
             RuleTokenKind::NotEq => "!=",
             RuleTokenKind::And => "&&",
             RuleTokenKind::Or => "||",
-            RuleTokenKind::LitStr(s) => &s,
-            RuleTokenKind::LitInt(s) => &s,
+            RuleTokenKind::LitStr(s) => s,
+            RuleTokenKind::LitInt(s) => s,
             RuleTokenKind::Matches => "matches",
             RuleTokenKind::Redirect => "redirect",
             RuleTokenKind::Return => "return",
+            RuleTokenKind::If => "if",
             RuleTokenKind::Eof => "EOF",
         };
 
@@ -299,6 +302,7 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
                     "matches" => RuleTokenKind::Matches,
                     "redirect" => RuleTokenKind::Redirect,
                     "return" => RuleTokenKind::Return,
+                    "if" => RuleTokenKind::If,
                     _ => RuleTokenKind::Ident(ident),
                 }
             }
@@ -354,6 +358,11 @@ mod test {
             matches /index.html {
                 set_header("Server", "http-rs");
                 abc == 123;
+
+                if method == "POST" {
+                    return 400;
+                }
+
                 return 301 "/index2.html";
             }
         "#,
@@ -375,6 +384,15 @@ mod test {
             RuleTokenKind::Eq,
             RuleTokenKind::LitInt("123".into()),
             RuleTokenKind::Semicolon,
+            RuleTokenKind::If,
+            RuleTokenKind::Ident("method".into()),
+            RuleTokenKind::Eq,
+            RuleTokenKind::LitStr("POST".into()),
+            RuleTokenKind::LBrace,
+            RuleTokenKind::Return,
+            RuleTokenKind::LitInt("400".into()),
+            RuleTokenKind::Semicolon,
+            RuleTokenKind::RBrace,
             RuleTokenKind::Return,
             RuleTokenKind::LitInt("301".into()),
             RuleTokenKind::LitStr("/index2.html".into()),

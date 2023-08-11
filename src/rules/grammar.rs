@@ -1,5 +1,6 @@
 use crate::response_status_code::ResponseStatusCode;
 use crate::rules::error::{RuleError, SemanticErrorKind, SyntaxErrorKind};
+use crate::rules::expr::{Expr, ExprOrValue, Operator};
 use crate::rules::lexer::{Position, RuleToken, RuleTokenKind};
 use crate::rules::Rule;
 use std::error::Error;
@@ -23,6 +24,7 @@ pub enum StatementKind {
     Func(String, Vec<Lit>),
     Redirect(ResponseStatusCode, String),
     Return(ResponseStatusCode, Option<String>),
+    If(ExprOrValue, Vec<Statement>),
 }
 
 impl Display for StatementKind {
@@ -31,6 +33,7 @@ impl Display for StatementKind {
             StatementKind::Func(_, _) => "function call",
             StatementKind::Redirect(_, _) => "redirect",
             StatementKind::Return(_, _) => "return",
+            StatementKind::If(_, _) => "if",
         };
 
         write!(f, "{str_value}")
@@ -84,6 +87,7 @@ pub fn rule_statements(iter: &mut TokenIter) -> Result<Vec<Statement>> {
             RuleTokenKind::Ident(_) => base_statement(iter)?,
             RuleTokenKind::Redirect => redirect_statement(iter)?,
             RuleTokenKind::Return => return_statement(iter)?,
+            RuleTokenKind::If => if_statement(iter)?,
             RuleTokenKind::RBrace => break,
             _ => {
                 return Err(RuleError::syntax(
@@ -209,6 +213,28 @@ pub fn return_statement(iter: &mut TokenIter) -> Result<Statement> {
     Ok(statement)
 }
 
+pub fn if_statement(iter: &mut TokenIter) -> Result<Statement> {
+    let statement = match iter.next() {
+        Some(RuleToken {
+            kind: RuleTokenKind::If,
+            ..
+        }) => {
+            let condition = expr(iter)?;
+
+            swallow(iter, RuleTokenKind::LBrace)?;
+            let statements = rule_statements(iter)?;
+            swallow(iter, RuleTokenKind::RBrace)?;
+
+            Statement {
+                kind: StatementKind::If(condition, statements),
+            }
+        }
+        _ => unreachable!(),
+    };
+
+    Ok(statement)
+}
+
 fn status_code(iter: &mut TokenIter) -> Result<ResponseStatusCode> {
     let (response_code, position) = match int(iter)? {
         RuleToken {
@@ -233,27 +259,6 @@ fn status_code(iter: &mut TokenIter) -> Result<ResponseStatusCode> {
 
     Ok(response_code)
 }
-#[derive(Debug)]
-pub enum Operator {
-    And,
-    Or,
-    Eq,
-    NotEq,
-}
-
-#[derive(Debug)]
-pub enum ExprOrValue {
-    Expr(Expr),
-    Value(RuleToken),
-}
-
-#[derive(Debug)]
-pub struct Expr {
-    lhs: Box<ExprOrValue>,
-    operator: Operator,
-    rhs: Box<ExprOrValue>,
-}
-
 fn expr(iter: &mut TokenIter) -> Result<ExprOrValue> {
     bool_expr(iter)
 }
@@ -343,7 +348,7 @@ mod test {
         let src = "abc == 123 && x != \"string\" || (a == 1 && b == 2) || (a || b)";
         let mut iter = tokenize(src).unwrap().into_iter().peekable();
         let res = expr(&mut iter);
-        println!("{:?}", res.unwrap());
+        println!("{:#?}", res.unwrap());
     }
 }
 
