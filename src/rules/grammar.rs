@@ -378,9 +378,7 @@ rule_helper!(string, RuleTokenKind::LitStr(_), "string");
 fn swallow(iter: &mut TokenIter, to_swallow: RuleTokenKind) -> Result<RuleToken> {
     match iter.peek() {
         Some(token) => {
-            // if matches!(&token.kind, to_swallow) {
             if std::mem::discriminant(&token.kind) == std::mem::discriminant(&to_swallow) {
-                println!("token {token:?}, to_swallow {to_swallow:?}");
                 Ok(iter.next().unwrap())
             } else {
                 Err(RuleError::syntax(

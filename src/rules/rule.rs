@@ -1,6 +1,7 @@
 use crate::request::Request;
 use crate::response::Response;
 use crate::response_status_code::ResponseStatusCode;
+use crate::rules::expr::Value;
 use crate::rules::grammar::{Lit, Statement, StatementKind};
 
 #[derive(Debug, PartialEq)]
@@ -32,9 +33,17 @@ impl Rule {
     }
 
     pub fn evaluate(&self, request: &Request, response: Response) -> RuleEvaluationResult {
+        Self::evaluate_statements(&self.statements, request, response)
+    }
+
+    fn evaluate_statements(
+        statements: &[Statement],
+        request: &Request,
+        response: Response,
+    ) -> RuleEvaluationResult {
         let mut out_response = response;
 
-        for statement in self.statements.iter() {
+        for statement in statements {
             match &statement.kind {
                 StatementKind::Func(func_name, args) => {
                     if func_name == "set_header" {
@@ -65,9 +74,19 @@ impl Rule {
 
                     return RuleEvaluationResult::Finish(out_response);
                 }
-                StatementKind::If(condition_expr, statements) => {
-                    todo!()
-                }
+                StatementKind::If(condition_expr, statements) => match condition_expr.eval() {
+                    Value::Bool(val) => {
+                        if val {
+                            match Self::evaluate_statements(statements, request, out_response) {
+                                RuleEvaluationResult::Continue(res) => out_response = res,
+                                RuleEvaluationResult::Finish(res) => {
+                                    return RuleEvaluationResult::Finish(res)
+                                }
+                            }
+                        }
+                    }
+                    _ => unreachable!(),
+                },
             }
         }
 

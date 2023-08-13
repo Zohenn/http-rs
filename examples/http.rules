@@ -1,5 +1,13 @@
 matches / {
     set_header("Server", "http-rs");
+
+    if 1 == 1 {
+        set_header("Server", "http-rs2");
+    }
+
+    if 1 == 2 {
+        set_header("Server", "http-rs3");
+    }
 }
 
 matches /index2.html {
