@@ -326,7 +326,19 @@ fn primary(iter: &mut TokenIter) -> Result<ExprOrValue> {
             Ok(expr)
         }
         Some(token) if token.kind.is_lit() || matches!(token.kind, RuleTokenKind::Ident(_)) => {
-            Ok(ExprOrValue::Value(iter.next().unwrap()))
+            let val = ExprOrValue::Value(iter.next().unwrap());
+            match iter.peek() {
+                Some(token) if matches!(token.kind, RuleTokenKind::Dot) => {
+                    swallow(iter, RuleTokenKind::Dot)?;
+                    let field = swallow(iter, RuleTokenKind::Ident("".to_owned()))?;
+                    Ok(ExprOrValue::Expr(Expr {
+                        lhs: val.into(),
+                        operator: Operator::Dot,
+                        rhs: ExprOrValue::Value(field).into(),
+                    }))
+                }
+                _ => Ok(val),
+            }
         }
         _ => {
             let next = iter.peek().unwrap_or(&EOF_TOKEN);

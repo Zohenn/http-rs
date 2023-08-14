@@ -15,6 +15,7 @@ pub enum RuleTokenKind {
     RParen,
     Comma,
     Semicolon,
+    Dot,
     Eq,
     NotEq,
     And,
@@ -43,6 +44,7 @@ impl RuleTokenKind {
             RuleTokenKind::RParen => 1,
             RuleTokenKind::Comma => 1,
             RuleTokenKind::Semicolon => 1,
+            RuleTokenKind::Dot => 1,
             RuleTokenKind::Eq => 2,
             RuleTokenKind::NotEq => 2,
             RuleTokenKind::And => 2,
@@ -72,6 +74,7 @@ impl Display for RuleTokenKind {
             RuleTokenKind::RParen => ")",
             RuleTokenKind::Comma => ",",
             RuleTokenKind::Semicolon => ";",
+            RuleTokenKind::Dot => ".",
             RuleTokenKind::Eq => "==",
             RuleTokenKind::NotEq => "!=",
             RuleTokenKind::And => "&&",
@@ -246,6 +249,7 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
                 RuleTokenKind::LitStr(lit)
             }
             ';' => RuleTokenKind::Semicolon,
+            '.' => RuleTokenKind::Dot,
             '=' => match iter.peek() {
                 Some(c) if c == &'=' => {
                     iter.next();
@@ -363,6 +367,9 @@ mod test {
                     return 400;
                 }
 
+                request.method;
+                response.set_header();
+
                 return 301 "/index2.html";
             }
         "#,
@@ -393,6 +400,16 @@ mod test {
             RuleTokenKind::LitInt("400".into()),
             RuleTokenKind::Semicolon,
             RuleTokenKind::RBrace,
+            RuleTokenKind::Ident("request".into()),
+            RuleTokenKind::Dot,
+            RuleTokenKind::Ident("method".into()),
+            RuleTokenKind::Semicolon,
+            RuleTokenKind::Ident("response".into()),
+            RuleTokenKind::Dot,
+            RuleTokenKind::Ident("set_header".into()),
+            RuleTokenKind::LParen,
+            RuleTokenKind::RParen,
+            RuleTokenKind::Semicolon,
             RuleTokenKind::Return,
             RuleTokenKind::LitInt("301".into()),
             RuleTokenKind::LitStr("/index2.html".into()),

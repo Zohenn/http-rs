@@ -3,6 +3,7 @@ use crate::response::Response;
 use crate::response_status_code::ResponseStatusCode;
 use crate::rules::expr::Value;
 use crate::rules::grammar::{Lit, Statement, StatementKind};
+use crate::rules::scope::RuleScope;
 
 #[derive(Debug, PartialEq)]
 pub enum RuleAction {
@@ -33,13 +34,16 @@ impl Rule {
     }
 
     pub fn evaluate(&self, request: &Request, response: Response) -> RuleEvaluationResult {
-        Self::evaluate_statements(&self.statements, request, response)
+        let mut scope = RuleScope::new();
+        scope.update_var("request", Value::Object(Box::new(request)));
+        Self::evaluate_statements(&self.statements, request, response, &scope)
     }
 
     fn evaluate_statements(
         statements: &[Statement],
         request: &Request,
         response: Response,
+        scope: &RuleScope,
     ) -> RuleEvaluationResult {
         let mut out_response = response;
 
@@ -74,10 +78,15 @@ impl Rule {
 
                     return RuleEvaluationResult::Finish(out_response);
                 }
-                StatementKind::If(condition_expr, statements) => match condition_expr.eval() {
+                StatementKind::If(condition_expr, statements) => match condition_expr.eval(scope) {
                     Value::Bool(val) => {
                         if val {
-                            match Self::evaluate_statements(statements, request, out_response) {
+                            match Self::evaluate_statements(
+                                statements,
+                                request,
+                                out_response,
+                                scope,
+                            ) {
                                 RuleEvaluationResult::Continue(res) => out_response = res,
                                 RuleEvaluationResult::Finish(res) => {
                                     return RuleEvaluationResult::Finish(res)

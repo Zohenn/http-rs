@@ -8,6 +8,10 @@ matches / {
     if 1 == 2 {
         set_header("Server", "http-rs3");
     }
+
+    if request.method == "GET" {
+        set_header("X-Method", "http-get");
+    }
 }
 
 matches /index2.html {
