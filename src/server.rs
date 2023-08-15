@@ -347,8 +347,9 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
         request: Option<Request>,
         response: Response,
     ) -> HandleConnectionState {
+        let request = request.map(|v| Arc::new(v));
         let mut response = match &request {
-            Some(request) => apply_rules(&self.server.rules, request, response),
+            Some(request) => apply_rules(&self.server.rules, request.clone(), response),
             None => response,
         };
 
@@ -386,7 +387,7 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
     }
 }
 
-fn apply_rules(rules: &[Rule], request: &Request, response: Response) -> Response {
+fn apply_rules(rules: &[Rule], request: Arc<Request>, response: Response) -> Response {
     let mut out_response = response;
 
     for rule in rules {
@@ -394,7 +395,7 @@ fn apply_rules(rules: &[Rule], request: &Request, response: Response) -> Respons
             continue;
         }
 
-        match rule.evaluate(request, out_response) {
+        match rule.evaluate(request.clone(), out_response) {
             RuleEvaluationResult::Continue(response) => out_response = response,
             RuleEvaluationResult::Finish(response) => return response,
         }

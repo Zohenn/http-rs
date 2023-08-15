@@ -1,6 +1,8 @@
 matches / {
     set_header("Server", "http-rs");
 
+    util.log("123");
+
     if 1 == 1 {
         set_header("Server", "http-rs2");
     }

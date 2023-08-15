@@ -1,11 +1,11 @@
 use crate::rules::expr::Value;
 use std::collections::HashMap;
 
-pub struct RuleScope<'a> {
-    vars: HashMap<String, Value<'a>>,
+pub struct RuleScope {
+    vars: HashMap<String, Value>,
 }
 
-impl<'a> RuleScope<'a> {
+impl RuleScope {
     pub fn new() -> Self {
         RuleScope {
             vars: HashMap::new(),
@@ -16,7 +16,7 @@ impl<'a> RuleScope<'a> {
         self.vars.get(ident)
     }
 
-    pub fn update_var(&mut self, ident: &str, value: Value<'a>) {
+    pub fn update_var(&mut self, ident: &str, value: Value) {
         self.vars.insert(ident.to_owned(), value);
     }
 }

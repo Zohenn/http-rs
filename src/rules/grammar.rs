@@ -325,21 +325,45 @@ fn primary(iter: &mut TokenIter) -> Result<ExprOrValue> {
 
             Ok(expr)
         }
-        Some(token) if token.kind.is_lit() || matches!(token.kind, RuleTokenKind::Ident(_)) => {
+        Some(token) if matches!(token.kind, RuleTokenKind::Ident(_)) => {
             let val = ExprOrValue::Value(iter.next().unwrap());
-            match iter.peek() {
+            let target = match iter.peek() {
                 Some(token) if matches!(token.kind, RuleTokenKind::Dot) => {
                     swallow(iter, RuleTokenKind::Dot)?;
-                    let field = swallow(iter, RuleTokenKind::Ident("".to_owned()))?;
-                    Ok(ExprOrValue::Expr(Expr {
+                    let field = ident(iter)?;
+                    ExprOrValue::Expr(Expr {
                         lhs: val.into(),
                         operator: Operator::Dot,
                         rhs: ExprOrValue::Value(field).into(),
+                    })
+                }
+                Some(token) if matches!(token.kind, RuleTokenKind::LParen) => val,
+                _ => return Ok(val),
+            };
+
+            match iter.peek() {
+                Some(token) if matches!(token.kind, RuleTokenKind::LParen) => {
+                    swallow(iter, RuleTokenKind::LParen)?;
+
+                    let mut args: Vec<ExprOrValue> = vec![];
+
+                    while let Ok(arg) = expr(iter) {
+                        args.push(arg);
+                        swallow(iter, RuleTokenKind::Comma).ok();
+                    }
+
+                    swallow(iter, RuleTokenKind::RParen)?;
+
+                    Ok(ExprOrValue::Expr(Expr {
+                        lhs: target.into(),
+                        operator: Operator::Call,
+                        rhs: ExprOrValue::Many(args).into(),
                     }))
                 }
-                _ => Ok(val),
+                _ => Ok(target),
             }
         }
+        Some(token) if token.kind.is_lit() => Ok(ExprOrValue::Value(iter.next().unwrap())),
         _ => {
             let next = iter.peek().unwrap_or(&EOF_TOKEN);
             Err(RuleError::syntax(

@@ -1,9 +1,13 @@
 use crate::request::Request;
 use crate::response::Response;
 use crate::response_status_code::ResponseStatusCode;
+use crate::rules::exposed::RuleUtil;
 use crate::rules::expr::Value;
 use crate::rules::grammar::{Lit, Statement, StatementKind};
 use crate::rules::scope::RuleScope;
+use log::log;
+use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug, PartialEq)]
 pub enum RuleAction {
@@ -33,15 +37,17 @@ impl Rule {
         !url.matches(&self.pattern).collect::<Vec<&str>>().is_empty()
     }
 
-    pub fn evaluate(&self, request: &Request, response: Response) -> RuleEvaluationResult {
+    pub fn evaluate(&self, request: Arc<Request>, response: Response) -> RuleEvaluationResult {
         let mut scope = RuleScope::new();
-        scope.update_var("request", Value::Object(Box::new(request)));
-        Self::evaluate_statements(&self.statements, request, response, &scope)
+        scope.update_var("request", Value::Object(request.clone()));
+        scope.update_var("util", Value::Object(Arc::new(RuleUtil)));
+        // scope.update_var("log", Value::Callable(Box::new(|text: &str| log!(text))));
+        Self::evaluate_statements(&self.statements, request, response, &mut scope)
     }
 
     fn evaluate_statements(
         statements: &[Statement],
-        request: &Request,
+        request: Arc<Request>,
         response: Response,
         scope: &RuleScope,
     ) -> RuleEvaluationResult {
@@ -83,7 +89,7 @@ impl Rule {
                         if val {
                             match Self::evaluate_statements(
                                 statements,
-                                request,
+                                request.clone(),
                                 out_response,
                                 scope,
                             ) {
