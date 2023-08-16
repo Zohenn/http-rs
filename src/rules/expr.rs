@@ -2,6 +2,7 @@ use crate::rules::callable::Callable;
 use crate::rules::lexer::{RuleToken, RuleTokenKind};
 use crate::rules::object::{MemberKind, Object};
 use crate::rules::scope::RuleScope;
+use crate::rules::value::Value;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -94,7 +95,7 @@ fn eval_call_expr<'a>(target: Value, args: Value, scope: &'a RuleScope) -> Value
         unreachable!()
     };
 
-    for arg in args {
+    for arg in args.iter() {
         match arg {
             Value::String(s) => println!("{s}"),
             Value::Int(_) => {}
@@ -106,7 +107,16 @@ fn eval_call_expr<'a>(target: Value, args: Value, scope: &'a RuleScope) -> Value
         }
     }
 
-    todo!()
+    let func = scope.get_var(&target);
+
+    match func {
+        Some(Value::Callable(callable)) => {
+            callable(args);
+        }
+        _ => {}
+    }
+
+    Value::Bool(true)
 }
 
 #[derive(Debug)]
@@ -114,27 +124,4 @@ pub struct Expr {
     pub lhs: Box<ExprOrValue>,
     pub operator: Operator,
     pub rhs: Box<ExprOrValue>,
-}
-
-pub enum Value {
-    String(String),
-    Int(u32),
-    Bool(bool),
-    Ident(String),
-    Object(Arc<dyn for<'a> Object<'a>>),
-    Callable(Box<dyn Callable<Result = Value>>),
-    Many(Vec<Value>),
-}
-
-impl PartialEq for Value {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Value::String(s1), Value::String(s2)) => s1.eq(s2),
-            (Value::Int(i1), Value::Int(i2)) => i1.eq(i2),
-            _ => todo!(),
-            // Value::Int(_) => {}
-            // Value::Bool(_) => {}
-            // Value::Object => {}
-        }
-    }
 }

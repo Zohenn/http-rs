@@ -347,7 +347,7 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
         request: Option<Request>,
         response: Response,
     ) -> HandleConnectionState {
-        let request = request.map(|v| Arc::new(v));
+        let request = request.map(Arc::new);
         let mut response = match &request {
             Some(request) => apply_rules(&self.server.rules, request.clone(), response),
             None => response,

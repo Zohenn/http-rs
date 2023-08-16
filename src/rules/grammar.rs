@@ -25,6 +25,7 @@ pub enum StatementKind {
     Redirect(ResponseStatusCode, String),
     Return(ResponseStatusCode, Option<String>),
     If(ExprOrValue, Vec<Statement>),
+    Expr(ExprOrValue),
 }
 
 impl Display for StatementKind {
@@ -34,6 +35,7 @@ impl Display for StatementKind {
             StatementKind::Redirect(_, _) => "redirect",
             StatementKind::Return(_, _) => "return",
             StatementKind::If(_, _) => "if",
+            StatementKind::Expr(_) => "expr",
         };
 
         write!(f, "{str_value}")
@@ -113,6 +115,21 @@ pub fn rule_statements(iter: &mut TokenIter) -> Result<Vec<Statement>> {
 }
 
 pub fn base_statement(iter: &mut TokenIter) -> Result<Statement> {
+    match iter.peek() {
+        Some(RuleToken {
+            kind: RuleTokenKind::Ident(name),
+            ..
+        }) if name != "set_header" => {
+            let expression = expr(iter)?;
+            swallow(iter, RuleTokenKind::Semicolon)?;
+
+            return Ok(Statement {
+                kind: StatementKind::Expr(expression),
+            });
+        }
+        _ => {}
+    }
+
     let statement = match iter.next() {
         Some(RuleToken {
             kind: RuleTokenKind::Ident(name),

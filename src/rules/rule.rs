@@ -1,12 +1,12 @@
 use crate::request::Request;
 use crate::response::Response;
 use crate::response_status_code::ResponseStatusCode;
+use crate::rules::callable::wrap_callable;
 use crate::rules::exposed::RuleUtil;
-use crate::rules::expr::Value;
 use crate::rules::grammar::{Lit, Statement, StatementKind};
 use crate::rules::scope::RuleScope;
-use log::log;
-use std::rc::Rc;
+use crate::rules::value::Value;
+use log::info;
 use std::sync::Arc;
 
 #[derive(Debug, PartialEq)]
@@ -41,7 +41,14 @@ impl Rule {
         let mut scope = RuleScope::new();
         scope.update_var("request", Value::Object(request.clone()));
         scope.update_var("util", Value::Object(Arc::new(RuleUtil)));
-        // scope.update_var("log", Value::Callable(Box::new(|text: &str| log!(text))));
+        scope.update_var(
+            "log",
+            Value::Callable(wrap_callable(|text: String| {
+                info!("{}", text);
+                Value::Bool(true)
+            })),
+        );
+
         Self::evaluate_statements(&self.statements, request, response, &mut scope)
     }
 
@@ -102,6 +109,9 @@ impl Rule {
                     }
                     _ => unreachable!(),
                 },
+                StatementKind::Expr(expr) => {
+                    expr.eval(scope);
+                }
             }
         }
 

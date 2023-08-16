@@ -1,7 +1,8 @@
-use crate::rules::callable::Callable;
-use crate::rules::expr::Value;
+use crate::rules::callable::{wrap_callable, Call, Callable};
+use crate::rules::value::Value;
 use std::collections::HashMap;
 use std::mem::discriminant;
+use std::sync::Arc;
 
 // pub struct Object {
 //     members: HashMap<String, Member>,
@@ -29,17 +30,20 @@ use std::mem::discriminant;
 // }
 
 pub trait Object<'a> {
-    fn get_member(&self, ident: &str) -> Option<Member<'a>>;
+    fn get_member(&self, ident: &str) -> Option<Member>;
 
-    fn get_field(&self, ident: &str) -> Option<Member<'a>> {
+    fn get_field(&self, ident: &str) -> Option<Member> {
         self.get_member_kind(ident, MemberKind::Field(Value::Bool(true)))
     }
 
-    fn get_method(&self, ident: &str) -> Option<Member<'a>> {
-        self.get_member_kind(ident, MemberKind::Method(Box::new(|| Value::Bool(true))))
+    fn get_method(&self, ident: &str) -> Option<Member> {
+        self.get_member_kind(
+            ident,
+            MemberKind::Method(wrap_callable(|| Value::Bool(true))),
+        )
     }
 
-    fn get_member_kind(&self, ident: &str, kind: MemberKind<'a>) -> Option<Member<'a>> {
+    fn get_member_kind(&self, ident: &str, kind: MemberKind) -> Option<Member> {
         match self.get_member(ident) {
             Some(member) if discriminant(&member.kind) == discriminant(&kind) => Some(member),
             _ => None,
@@ -47,17 +51,17 @@ pub trait Object<'a> {
     }
 }
 
-pub enum MemberKind<'a> {
+pub enum MemberKind {
     Field(Value),
-    Method(Box<dyn Callable<Result = Value> + 'a>),
+    Method(Arc<Call>),
 }
 
-pub struct Member<'a> {
-    pub kind: MemberKind<'a>,
+pub struct Member {
+    pub kind: MemberKind,
     ident: String,
 }
 
-impl<'a> Member<'a> {
+impl Member {
     pub fn field(ident: String, value: Value) -> Self {
         Member {
             kind: MemberKind::Field(value),
@@ -65,10 +69,7 @@ impl<'a> Member<'a> {
         }
     }
 
-    pub fn method<F>(ident: String, callable: Box<F>) -> Self
-    where
-        F: Callable<Result = Value> + 'a,
-    {
+    pub fn method(ident: String, callable: Arc<Call>) -> Self {
         Member {
             kind: MemberKind::Method(callable),
             ident,

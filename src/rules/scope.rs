@@ -1,14 +1,16 @@
-use crate::rules::expr::Value;
+use crate::rules::value::Value;
 use std::collections::HashMap;
 
 pub struct RuleScope {
     vars: HashMap<String, Value>,
+    callables: HashMap<String, Value>,
 }
 
 impl RuleScope {
     pub fn new() -> Self {
         RuleScope {
             vars: HashMap::new(),
+            callables: HashMap::new(),
         }
     }
 

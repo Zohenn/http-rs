@@ -1,3 +1,6 @@
+use crate::rules::value::{FromVec, Value};
+use std::sync::Arc;
+
 pub trait Callable<Args = ()> {
     type Result;
 
@@ -24,4 +27,13 @@ where
     fn invoke(&self, args: (A,)) -> Self::Result {
         self(args.0)
     }
+}
+
+pub type Call = dyn Fn(Vec<Value>) -> Value;
+pub fn wrap_callable<F, Args>(func: F) -> Arc<Call>
+where
+    Args: FromVec,
+    F: Callable<Args, Result = Value> + 'static,
+{
+    Arc::new(move |args| func.invoke(Args::from_vec(&args)))
 }

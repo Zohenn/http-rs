@@ -1,12 +1,12 @@
 use crate::request::Request;
 use crate::response::Response;
 use crate::rules::callable::*;
-use crate::rules::expr::Value;
 use crate::rules::object::{Member, Object};
+use crate::rules::value::Value;
 use log::info;
 
 impl<'a> Object<'a> for Request {
-    fn get_member(&self, ident: &str) -> Option<Member<'a>> {
+    fn get_member(&self, ident: &str) -> Option<Member> {
         match ident {
             "method" => Some(Member::field(
                 "method".to_owned(),
@@ -32,11 +32,11 @@ impl<'a> Object<'a> for Request {
 pub struct RuleUtil;
 
 impl<'a> Object<'a> for RuleUtil {
-    fn get_member(&self, ident: &str) -> Option<Member<'a>> {
+    fn get_member(&self, ident: &str) -> Option<Member> {
         match ident {
             "log" => Some(Member::method(
                 "log".to_owned(),
-                Box::new(|| {
+                wrap_callable(|| {
                     info!("text");
                     Value::Bool(true)
                 }),
