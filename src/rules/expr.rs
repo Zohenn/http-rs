@@ -1,9 +1,7 @@
-use crate::rules::callable::Callable;
 use crate::rules::lexer::{RuleToken, RuleTokenKind};
 use crate::rules::object::{MemberKind, Object};
 use crate::rules::scope::RuleScope;
 use crate::rules::value::Value;
-use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum Operator {

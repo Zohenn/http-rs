@@ -13,7 +13,7 @@ where
 {
     type Result = R;
 
-    fn invoke(&self, args: ()) -> Self::Result {
+    fn invoke(&self, _args: ()) -> Self::Result {
         self()
     }
 }

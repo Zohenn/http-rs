@@ -2,7 +2,6 @@ use crate::request::Request;
 use crate::response::Response;
 use crate::response_status_code::ResponseStatusCode;
 use crate::rules::callable::wrap_callable;
-use crate::rules::exposed::RuleUtil;
 use crate::rules::grammar::{Lit, Statement, StatementKind};
 use crate::rules::scope::RuleScope;
 use crate::rules::value::Value;
@@ -40,7 +39,6 @@ impl Rule {
     pub fn evaluate(&self, request: Arc<Request>, response: Response) -> RuleEvaluationResult {
         let mut scope = RuleScope::new();
         scope.update_var("request", Value::Object(request.clone()));
-        scope.update_var("util", Value::Object(Arc::new(RuleUtil)));
         scope.update_var(
             "log",
             Value::Callable(wrap_callable(|text: String| {
