@@ -1,7 +1,7 @@
 use crate::request::Request;
 use crate::response::Response;
-use crate::rules::callable::{wrap_callable, Call};
-use crate::rules::value::Value;
+use crate::rules::callable::{wrap_callable, Call, Function};
+use crate::rules::value::{FromVec, Value};
 use std::any::Any;
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
@@ -32,6 +32,47 @@ impl Object {
             _ => None,
         }
     }
+
+    pub fn builder() -> ObjectBuilder {
+        ObjectBuilder {
+            members: HashMap::new(),
+        }
+    }
+}
+
+pub struct ObjectBuilder {
+    members: HashMap<String, Member>,
+}
+
+impl ObjectBuilder {
+    pub fn add_field<Args, F>(mut self, ident: &str, callable: F) -> Self
+    where
+        Args: FromVec,
+        F: Function<Args, Result = Value> + 'static,
+    {
+        self.members
+            .insert(ident.to_owned(), Member::field(wrap_callable(callable)));
+
+        self
+    }
+
+    pub fn add_method<Args, F>(mut self, ident: &str, callable: F) -> Self
+    where
+        Args: FromVec,
+        F: Function<Args, Result = Value> + 'static,
+    {
+        self.members
+            .insert(ident.to_owned(), Member::method(wrap_callable(callable)));
+
+        self
+    }
+
+    pub fn get(self, instance: Rc<RefCell<dyn Any>>) -> Object {
+        Object {
+            members: self.members,
+            instance,
+        }
+    }
 }
 
 pub trait IntoObject {
@@ -48,34 +89,27 @@ fn downcast_instance_mut<T: 'static>(instance: &Rc<RefCell<dyn Any>>) -> RefMut<
 
 impl IntoObject for Rc<RefCell<Request>> {
     fn into_object(self) -> Object {
-        Object {
-            members: HashMap::from([(
-                "method".to_owned(),
-                Member::field(wrap_callable(|instance: Rc<RefCell<dyn Any>>| {
-                    let instance = downcast_instance_ref::<Request>(&instance);
-                    Value::String(instance.method.to_string())
-                })),
-            )]),
-            instance: self,
-        }
+        Object::builder()
+            .add_field("method", |instance: Rc<RefCell<dyn Any>>| {
+                let instance = downcast_instance_ref::<Request>(&instance);
+                Value::String(instance.method.to_string())
+            })
+            .get(self)
     }
 }
 
 impl IntoObject for Rc<RefCell<Response>> {
     fn into_object(self) -> Object {
-        Object {
-            members: HashMap::from([(
-                "set_header".to_owned(),
-                Member::method(wrap_callable(
-                    |instance: Rc<RefCell<dyn Any>>, name: String, value: String| {
-                        let mut instance = downcast_instance_mut::<Response>(&instance);
-                        instance.set_header(&name, &value);
-                        Value::Bool(true)
-                    },
-                )),
-            )]),
-            instance: self,
-        }
+        Object::builder()
+            .add_method(
+                "set_header",
+                |instance: Rc<RefCell<dyn Any>>, name: String, value: String| {
+                    let mut instance = downcast_instance_mut::<Response>(&instance);
+                    instance.set_header(&name, &value);
+                    Value::Bool(true)
+                },
+            )
+            .get(self)
     }
 }
 
