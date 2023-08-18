@@ -7,10 +7,12 @@ use crate::rules::{parse_file, Rule, RuleAction, RuleEvaluationResult};
 use crate::server_config::{KeepAliveConfig, ServerConfig};
 use crate::types::IoResult;
 use log::{debug, error, info};
+use std::cell::RefCell;
 use std::fs;
 use std::io::ErrorKind;
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::Arc;
 
 type RequestListener = dyn Fn(&Request) -> Option<Response> + Send + Sync;
@@ -347,7 +349,7 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
         request: Option<Request>,
         response: Response,
     ) -> HandleConnectionState {
-        let request = request.map(Arc::new);
+        let request = request.map(|v| Rc::new(RefCell::new(v)));
         let mut response = match &request {
             Some(request) => apply_rules(&self.server.rules, request.clone(), response),
             None => response,
@@ -357,7 +359,7 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
             || self.served_requests_count == self.max_requests - 1
             || request
                 .as_ref()
-                .is_some_and(|request| request.has_header("Connection", Some("close")));
+                .is_some_and(|request| request.borrow().has_header("Connection", Some("close")));
 
         if should_close {
             response.set_header("Connection", "close");
@@ -387,21 +389,23 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
     }
 }
 
-fn apply_rules(rules: &[Rule], request: Arc<Request>, response: Response) -> Response {
-    let mut out_response = response;
+fn apply_rules(rules: &[Rule], request: Rc<RefCell<Request>>, response: Response) -> Response {
+    let out_response = Rc::new(RefCell::new(response));
 
     for rule in rules {
-        if !rule.matches(&request.url) {
+        if !rule.matches(&request.borrow().url) {
             continue;
         }
 
-        match rule.evaluate(request.clone(), out_response) {
-            RuleEvaluationResult::Continue(response) => out_response = response,
-            RuleEvaluationResult::Finish(response) => return response,
+        match rule.evaluate(request.clone(), out_response.clone()) {
+            RuleEvaluationResult::Continue => {}
+            RuleEvaluationResult::Finish => {
+                return Rc::try_unwrap(out_response).unwrap().into_inner()
+            }
         }
     }
 
-    out_response
+    Rc::try_unwrap(out_response).unwrap().into_inner()
 }
 
 fn get_content(root: &str, content_path: &str) -> IoResult<Vec<u8>> {

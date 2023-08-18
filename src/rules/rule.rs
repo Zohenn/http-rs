@@ -3,9 +3,12 @@ use crate::response::Response;
 use crate::response_status_code::ResponseStatusCode;
 use crate::rules::callable::wrap_callable;
 use crate::rules::grammar::{Lit, Statement, StatementKind};
+use crate::rules::object2::IntoObject;
 use crate::rules::scope::RuleScope;
 use crate::rules::value::Value;
 use log::info;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 #[derive(Debug, PartialEq)]
@@ -16,8 +19,8 @@ pub enum RuleAction {
 }
 
 pub enum RuleEvaluationResult {
-    Continue(Response),
-    Finish(Response),
+    Continue,
+    Finish,
 }
 
 #[derive(Debug)]
@@ -36,9 +39,13 @@ impl Rule {
         !url.matches(&self.pattern).collect::<Vec<&str>>().is_empty()
     }
 
-    pub fn evaluate(&self, request: Arc<Request>, response: Response) -> RuleEvaluationResult {
+    pub fn evaluate(
+        &self,
+        request: Rc<RefCell<Request>>,
+        response: Rc<RefCell<Response>>,
+    ) -> RuleEvaluationResult {
         let mut scope = RuleScope::new();
-        scope.update_var("request", Value::Object(request.clone()));
+        scope.update_var("request", Value::Object2(request.clone().into_object()));
         scope.update_var(
             "log",
             Value::Callable(wrap_callable(|text: String| {
@@ -46,24 +53,26 @@ impl Rule {
                 Value::Bool(true)
             })),
         );
+        scope.update_var("response", Value::Object2(response.clone().into_object()));
 
         Self::evaluate_statements(&self.statements, request, response, &mut scope)
     }
 
     fn evaluate_statements(
         statements: &[Statement],
-        request: Arc<Request>,
-        response: Response,
+        request: Rc<RefCell<Request>>,
+        response: Rc<RefCell<Response>>,
         scope: &RuleScope,
     ) -> RuleEvaluationResult {
-        let mut out_response = response;
-
         for statement in statements {
+            let response = response.clone();
+
             match &statement.kind {
                 StatementKind::Func(func_name, args) => {
                     if func_name == "set_header" {
                         match &args[..] {
                             [Lit::String(arg1), Lit::String(arg2)] => {
+                                let mut out_response = response.borrow_mut();
                                 out_response.set_header(arg1, arg2);
                             }
                             _ => panic!(),
@@ -71,12 +80,14 @@ impl Rule {
                     }
                 }
                 StatementKind::Redirect(response_code, location) => {
+                    let mut out_response = response.borrow_mut();
                     out_response.set_status_code(*response_code);
                     out_response.set_header("Location", location);
 
-                    return RuleEvaluationResult::Finish(out_response);
+                    return RuleEvaluationResult::Finish;
                 }
                 StatementKind::Return(response_code, additional_data) => {
+                    let mut out_response = response.borrow_mut();
                     out_response.set_status_code(*response_code);
 
                     if let Some(body) = additional_data {
@@ -87,7 +98,7 @@ impl Rule {
                         out_response.set_header("Content-Length", &body_len.to_string());
                     }
 
-                    return RuleEvaluationResult::Finish(out_response);
+                    return RuleEvaluationResult::Finish;
                 }
                 StatementKind::If(condition_expr, statements) => match condition_expr.eval(scope) {
                     Value::Bool(val) => {
@@ -95,12 +106,12 @@ impl Rule {
                             match Self::evaluate_statements(
                                 statements,
                                 request.clone(),
-                                out_response,
+                                response,
                                 scope,
                             ) {
-                                RuleEvaluationResult::Continue(res) => out_response = res,
-                                RuleEvaluationResult::Finish(res) => {
-                                    return RuleEvaluationResult::Finish(res)
+                                RuleEvaluationResult::Continue => {}
+                                RuleEvaluationResult::Finish => {
+                                    return RuleEvaluationResult::Finish
                                 }
                             }
                         }
@@ -113,7 +124,7 @@ impl Rule {
             }
         }
 
-        RuleEvaluationResult::Continue(out_response)
+        RuleEvaluationResult::Continue
     }
 }
 

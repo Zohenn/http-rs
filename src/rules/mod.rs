@@ -9,6 +9,7 @@ mod exposed;
 mod expr;
 mod grammar;
 mod object;
+mod object2;
 mod rule;
 mod scope;
 mod value;
