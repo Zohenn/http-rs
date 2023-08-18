@@ -40,12 +40,6 @@ where
     }
 }
 
-pub trait MethodFunction<T, Args = ()> {
-    type Result;
-
-    fn invoke(&self, instance: &T, args: Args) -> Self::Result;
-}
-
 pub type Call = dyn Fn(Vec<Value>) -> Value;
 
 pub fn wrap_callable<F, Args>(func: F) -> Arc<Call>

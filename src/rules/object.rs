@@ -1,141 +1,112 @@
-use crate::rules::callable::{wrap_callable, Call, Function};
+use crate::request::Request;
+use crate::response::Response;
+use crate::rules::callable::{wrap_callable, Call};
 use crate::rules::value::Value;
 use std::any::Any;
+use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
-use std::mem::discriminant;
 use std::rc::Rc;
 use std::sync::Arc;
 
-// pub struct Object {
-//     members: HashMap<String, Member>,
-// }
-//
-// impl Object {
-//     pub fn get_member(&self, ident: &str) -> Option<&Member> {
-//         self.members.get(ident)
-//     }
-//
-//     pub fn get_field(&self, ident: &str) -> Option<&Member> {
-//         self.get_member_kind(ident, MemberKind::Field)
-//     }
-//
-//     pub fn get_method(&self, ident: &str) -> Option<&Member> {
-//         self.get_member_kind(ident, MemberKind::Method)
-//     }
-//
-//     fn get_member_kind(&self, ident: &str, kind: MemberKind) -> Option<&Member> {
-//         match self.get_member(ident) {
-//             Some(member) if discriminant(&member.kind) == discriminant(&kind) => Some(member),
-//             _ => None,
-//         }
-//     }
-// }
-
-pub trait AsAny: Any {
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-
-    /// Gets the type name of `self`
-    fn type_name(&self) -> &'static str;
+#[derive(Clone)]
+pub struct Object {
+    members: HashMap<String, Member>,
+    pub instance: Rc<RefCell<dyn Any>>,
 }
 
-impl<T: Any> AsAny for T {
-    #[inline(always)]
-    fn as_any(&self) -> &dyn Any {
-        self
+impl Object {
+    pub fn get_member(&self, ident: &str) -> Option<&Member> {
+        self.members.get(ident)
     }
 
-    #[inline(always)]
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    #[inline(always)]
-    fn type_name(&self) -> &'static str {
-        core::any::type_name::<T>()
-    }
-}
-
-/// This is a shim around `AaAny` to avoid some boilerplate code.
-/// It is a separate trait because it is also implemented
-/// on runtime polymorphic traits (which are `!Sized`).
-pub trait Downcast: AsAny {
-    /// Returns `true` if the boxed type is the same as `T`.
-    ///
-    /// Forward to the method defined on the type `Any`.
-    #[inline]
-    fn is<T>(&self) -> bool
-    where
-        T: AsAny,
-    {
-        self.as_any().is::<T>()
-    }
-
-    /// Forward to the method defined on the type `Any`.
-    #[inline]
-    fn downcast_ref<T>(&self) -> Option<&T>
-    where
-        T: AsAny,
-    {
-        self.as_any().downcast_ref()
-    }
-
-    /// Forward to the method defined on the type `Any`.
-    #[inline]
-    fn downcast_mut<T>(&mut self) -> Option<&mut T>
-    where
-        T: AsAny,
-    {
-        self.as_any_mut().downcast_mut()
-    }
-}
-
-impl<T: ?Sized + AsAny> Downcast for T {}
-
-pub trait Object: AsAny {
-    fn get_member(&self, ident: &str) -> Option<Member>;
-
-    fn get_field(&self, ident: &str) -> Option<Member> {
-        self.get_member_kind(ident, MemberKind::Field(Value::Bool(true)))
-    }
-
-    fn get_method(&self, ident: &str) -> Option<Member> {
-        self.get_member_kind(
-            ident,
-            MemberKind::Method(wrap_callable(|| Value::Bool(true))),
-        )
-    }
-
-    fn get_member_kind(&self, ident: &str, kind: MemberKind) -> Option<Member> {
+    pub fn get_field(&self, ident: &str) -> Option<&Member> {
         match self.get_member(ident) {
-            Some(member) if discriminant(&member.kind) == discriminant(&kind) => Some(member),
+            Some(member) if matches!(member.kind, MemberKind::Field) => Some(member),
+            _ => None,
+        }
+    }
+
+    pub fn get_method(&self, ident: &str) -> Option<&Member> {
+        match self.get_member(ident) {
+            Some(member) if matches!(member.kind, MemberKind::Method) => Some(member),
             _ => None,
         }
     }
 }
 
-pub enum MemberKind {
-    Field(Value),
-    Method(Arc<Call>),
+pub trait IntoObject {
+    fn into_object(self) -> Object;
 }
 
+fn downcast_instance_ref<T: 'static>(instance: &Rc<RefCell<dyn Any>>) -> Ref<T> {
+    Ref::map(instance.borrow(), |v| v.downcast_ref::<T>().unwrap())
+}
+
+fn downcast_instance_mut<T: 'static>(instance: &Rc<RefCell<dyn Any>>) -> RefMut<T> {
+    RefMut::map(instance.borrow_mut(), |v| v.downcast_mut::<T>().unwrap())
+}
+
+impl IntoObject for Rc<RefCell<Request>> {
+    fn into_object(self) -> Object {
+        Object {
+            members: HashMap::from([(
+                "method".to_owned(),
+                Member::field(wrap_callable(|instance: Rc<RefCell<dyn Any>>| {
+                    let instance = downcast_instance_ref::<Request>(&instance);
+                    Value::String(instance.method.to_string())
+                })),
+            )]),
+            instance: self,
+        }
+    }
+}
+
+impl IntoObject for Rc<RefCell<Response>> {
+    fn into_object(self) -> Object {
+        Object {
+            members: HashMap::from([(
+                "set_header".to_owned(),
+                Member::method(wrap_callable(
+                    |instance: Rc<RefCell<dyn Any>>, name: String, value: String| {
+                        let mut instance = downcast_instance_mut::<Response>(&instance);
+                        instance.set_header(&name, &value);
+                        Value::Bool(true)
+                    },
+                )),
+            )]),
+            instance: self,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum MemberKind {
+    Field,
+    Method,
+}
+
+#[derive(Clone)]
 pub struct Member {
     pub kind: MemberKind,
-    ident: String,
+    pub callable: Arc<Call>,
 }
 
 impl Member {
-    pub fn field(ident: String, value: Value) -> Self {
+    pub fn field(getter: Arc<Call>) -> Self {
         Member {
-            kind: MemberKind::Field(value),
-            ident,
+            kind: MemberKind::Field,
+            callable: getter,
         }
     }
 
-    pub fn method(ident: String, callable: Arc<Call>) -> Self {
+    pub fn method(callable: Arc<Call>) -> Self {
         Member {
-            kind: MemberKind::Method(callable),
-            ident,
+            kind: MemberKind::Method,
+            callable,
         }
+    }
+
+    pub fn eval(&self, args: Vec<Value>) -> Value {
+        self.callable.as_ref()(args)
     }
 }

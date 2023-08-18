@@ -3,13 +3,12 @@ use crate::response::Response;
 use crate::response_status_code::ResponseStatusCode;
 use crate::rules::callable::wrap_callable;
 use crate::rules::grammar::{Lit, Statement, StatementKind};
-use crate::rules::object2::IntoObject;
+use crate::rules::object::IntoObject;
 use crate::rules::scope::RuleScope;
 use crate::rules::value::Value;
 use log::info;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 #[derive(Debug, PartialEq)]
 pub enum RuleAction {
@@ -45,7 +44,7 @@ impl Rule {
         response: Rc<RefCell<Response>>,
     ) -> RuleEvaluationResult {
         let mut scope = RuleScope::new();
-        scope.update_var("request", Value::Object2(request.clone().into_object()));
+        scope.update_var("request", Value::Object(request.clone().into_object()));
         scope.update_var(
             "log",
             Value::Callable(wrap_callable(|text: String| {
@@ -53,9 +52,9 @@ impl Rule {
                 Value::Bool(true)
             })),
         );
-        scope.update_var("response", Value::Object2(response.clone().into_object()));
+        scope.update_var("response", Value::Object(response.clone().into_object()));
 
-        Self::evaluate_statements(&self.statements, request, response, &mut scope)
+        Self::evaluate_statements(&self.statements, request, response, &scope)
     }
 
     fn evaluate_statements(
