@@ -5,7 +5,6 @@ use crate::rules::object::Object;
 use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub enum Value {
@@ -14,8 +13,8 @@ pub enum Value {
     Bool(bool),
     Ident(String),
     Object(Object),
-    Callable(Arc<Call>),
-    CallableMethod(Object, Arc<Call>),
+    Callable(Rc<Call>),
+    CallableMethod(Object, Rc<Call>),
     Many(Vec<Value>),
 }
 

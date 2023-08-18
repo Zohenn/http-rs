@@ -6,7 +6,6 @@ use std::any::Any;
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Object {
@@ -122,18 +121,18 @@ pub enum MemberKind {
 #[derive(Clone)]
 pub struct Member {
     pub kind: MemberKind,
-    pub callable: Arc<Call>,
+    pub callable: Rc<Call>,
 }
 
 impl Member {
-    pub fn field(getter: Arc<Call>) -> Self {
+    pub fn field(getter: Rc<Call>) -> Self {
         Member {
             kind: MemberKind::Field,
             callable: getter,
         }
     }
 
-    pub fn method(callable: Arc<Call>) -> Self {
+    pub fn method(callable: Rc<Call>) -> Self {
         Member {
             kind: MemberKind::Method,
             callable,
