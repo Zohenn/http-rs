@@ -105,11 +105,6 @@ pub fn rule_statements(iter: &mut TokenIter) -> Result<Vec<Statement>> {
 }
 
 pub fn base_statement(iter: &mut TokenIter) -> Result<Statement> {
-    let Some(RuleToken { kind: RuleTokenKind::Ident(_), .. }) = iter.peek() else {
-        // guaranteed by caller
-        unreachable!()
-    };
-
     let expression = expr(iter)?;
     swallow(iter, RuleTokenKind::Semicolon)?;
 
@@ -119,79 +114,55 @@ pub fn base_statement(iter: &mut TokenIter) -> Result<Statement> {
 }
 
 pub fn redirect_statement(iter: &mut TokenIter) -> Result<Statement> {
-    let statement = match iter.next() {
-        Some(RuleToken {
-            kind: RuleTokenKind::Redirect,
-            ..
-        }) => {
-            let response_code = status_code(iter)?;
+    swallow(iter, RuleTokenKind::Redirect)?;
 
-            let location = match string(iter)?.kind {
-                RuleTokenKind::LitStr(str_val) => str_val,
-                _ => unreachable!(),
-            };
+    let response_code = status_code(iter)?;
 
-            let statement = Statement {
-                kind: StatementKind::Redirect(response_code, location),
-            };
-
-            swallow(iter, RuleTokenKind::Semicolon)?;
-
-            statement
-        }
+    let location = match string(iter)?.kind {
+        RuleTokenKind::LitStr(str_val) => str_val,
         _ => unreachable!(),
     };
+
+    let statement = Statement {
+        kind: StatementKind::Redirect(response_code, location),
+    };
+
+    swallow(iter, RuleTokenKind::Semicolon)?;
 
     Ok(statement)
 }
 
 pub fn return_statement(iter: &mut TokenIter) -> Result<Statement> {
-    let statement = match iter.next() {
-        Some(RuleToken {
-            kind: RuleTokenKind::Return,
-            ..
-        }) => {
-            let response_code = status_code(iter)?;
+    swallow(iter, RuleTokenKind::Return)?;
 
-            let location_or_body = string(iter).ok().map(|token| match token.kind {
-                RuleTokenKind::LitStr(str_val) => str_val,
-                _ => unreachable!(),
-            });
+    let response_code = status_code(iter)?;
 
-            let statement = Statement {
-                kind: StatementKind::Return(response_code, location_or_body),
-            };
-
-            swallow(iter, RuleTokenKind::Semicolon)?;
-
-            statement
-        }
+    let location_or_body = string(iter).ok().map(|token| match token.kind {
+        RuleTokenKind::LitStr(str_val) => str_val,
         _ => unreachable!(),
+    });
+
+    let statement = Statement {
+        kind: StatementKind::Return(response_code, location_or_body),
     };
+
+    swallow(iter, RuleTokenKind::Semicolon)?;
 
     Ok(statement)
 }
 
 pub fn if_statement(iter: &mut TokenIter) -> Result<Statement> {
-    let statement = match iter.next() {
-        Some(RuleToken {
-            kind: RuleTokenKind::If,
-            ..
-        }) => {
-            let condition = expr(iter)?;
+    swallow(iter, RuleTokenKind::If)?;
 
-            swallow(iter, RuleTokenKind::LBrace)?;
-            let statements = rule_statements(iter)?;
-            swallow(iter, RuleTokenKind::RBrace)?;
+    let condition = expr(iter)?;
 
-            Statement {
-                kind: StatementKind::If(condition, statements),
-            }
-        }
-        _ => unreachable!(),
-    };
+    swallow(iter, RuleTokenKind::LBrace)?;
+    let statements = rule_statements(iter)?;
+    swallow(iter, RuleTokenKind::RBrace)?;
 
-    Ok(statement)
+    Ok(Statement {
+        kind: StatementKind::If(condition, statements),
+    })
 }
 
 fn status_code(iter: &mut TokenIter) -> Result<ResponseStatusCode> {
