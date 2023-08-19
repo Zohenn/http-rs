@@ -28,14 +28,33 @@ impl Display for SyntaxErrorKind {
 #[derive(Debug)]
 pub enum SemanticErrorKind {
     UnexpectedStatement(String),
-    IncorrectType, // todo: move this to runtime error
 }
 
 impl Display for SemanticErrorKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             SemanticErrorKind::UnexpectedStatement(s) => write!(f, "Unexpected \"{s}\" statement"),
-            SemanticErrorKind::IncorrectType => write!(f, "Incorrect type"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum RuntimeErrorKind {
+    IncorrectType(String, String),
+    UnresolvedReference(String),
+    MemberNotDefined(String, String),
+}
+
+impl Display for RuntimeErrorKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuntimeErrorKind::IncorrectType(expected, got) => {
+                write!(f, "Incorrect type, expected {expected}, got {got}")
+            }
+            RuntimeErrorKind::UnresolvedReference(s) => write!(f, "Unresolved reference \"{s}\""),
+            RuntimeErrorKind::MemberNotDefined(member, object) => {
+                write!(f, "Member \"{member}\" is not defined on \"{object}\"")
+            }
         }
     }
 }
@@ -44,6 +63,7 @@ impl Display for SemanticErrorKind {
 pub enum RuleErrorKind {
     Syntax(SyntaxErrorKind),
     Semantic(SemanticErrorKind),
+    Runtime(RuntimeErrorKind),
 }
 
 impl Display for RuleErrorKind {
@@ -51,6 +71,7 @@ impl Display for RuleErrorKind {
         match self {
             RuleErrorKind::Syntax(kind) => write!(f, "Syntax error: {kind}"),
             RuleErrorKind::Semantic(kind) => write!(f, "Semantic error: {kind}"),
+            RuleErrorKind::Runtime(kind) => write!(f, "Runtime error: {kind}"),
         }
     }
 }
@@ -72,6 +93,13 @@ impl RuleError {
     pub fn semantic(kind: SemanticErrorKind, position: Position) -> Self {
         RuleError {
             kind: RuleErrorKind::Semantic(kind),
+            position,
+        }
+    }
+
+    pub fn runtime(kind: RuntimeErrorKind, position: Position) -> Self {
+        RuleError {
+            kind: RuleErrorKind::Runtime(kind),
             position,
         }
     }

@@ -398,9 +398,13 @@ fn apply_rules(rules: &[Rule], request: Rc<RefCell<Request>>, response: Response
         }
 
         match rule.evaluate(request.clone(), out_response.clone()) {
-            RuleEvaluationResult::Continue => {}
-            RuleEvaluationResult::Finish => {
+            Ok(RuleEvaluationResult::Continue) => {}
+            Ok(RuleEvaluationResult::Finish) => {
                 return Rc::try_unwrap(out_response).unwrap().into_inner()
+            }
+            Err(e) => {
+                error!("{e}")
+                // todo: 500?
             }
         }
     }

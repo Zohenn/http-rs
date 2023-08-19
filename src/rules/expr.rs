@@ -1,7 +1,10 @@
+use crate::rules::error::{RuleError, RuntimeErrorKind};
 use crate::rules::lexer::{Position, RuleToken, RuleTokenKind};
 use crate::rules::object::MemberKind;
 use crate::rules::scope::RuleScope;
 use crate::rules::value::{Type, Value};
+
+type Result<T> = std::result::Result<T, RuleError>;
 
 #[derive(Debug)]
 pub enum Operator {
@@ -21,7 +24,7 @@ pub enum ExprOrValue {
 }
 
 impl ExprOrValue {
-    pub fn eval(&self, scope: &RuleScope) -> Value {
+    pub fn eval(&self, scope: &RuleScope) -> Result<Value> {
         match self {
             ExprOrValue::Value(token) => eval_value(token),
             ExprOrValue::Expr(expr) => eval_expr(expr, scope),
@@ -29,19 +32,19 @@ impl ExprOrValue {
                 let mut val_args: Vec<Value> = vec![];
 
                 for arg in args {
-                    val_args.push(arg.eval(scope));
+                    val_args.push(arg.eval(scope)?);
                 }
 
                 let position = val_args.first().map_or(Position::zero(), |v| *v.position());
 
                 // todo: better position
-                Value::new(Type::Many(val_args), position)
+                Ok(Value::new(Type::List(val_args), position))
             }
         }
     }
 }
 
-fn eval_value(token: &RuleToken) -> Value {
+fn eval_value(token: &RuleToken) -> Result<Value> {
     let t = match &token.kind {
         RuleTokenKind::LitStr(s) => Type::String(s.clone()),
         RuleTokenKind::LitInt(s) => Type::Int(s.parse::<u32>().unwrap()),
@@ -49,12 +52,12 @@ fn eval_value(token: &RuleToken) -> Value {
         _ => unreachable!(),
     };
 
-    Value::new(t, token.position)
+    Ok(Value::new(t, token.position))
 }
 
-fn eval_expr(expr: &Expr, scope: &RuleScope) -> Value {
-    let lhs_value = expr.lhs.eval(scope);
-    let rhs_value = expr.rhs.eval(scope);
+fn eval_expr(expr: &Expr, scope: &RuleScope) -> Result<Value> {
+    let lhs_value = expr.lhs.eval(scope)?;
+    let rhs_value = expr.rhs.eval(scope)?;
 
     let t = match expr.operator {
         Operator::And => todo!(),
@@ -66,10 +69,10 @@ fn eval_expr(expr: &Expr, scope: &RuleScope) -> Value {
     };
 
     // todo: better position
-    Value::new(t, *lhs_value.position())
+    Ok(Value::new(t, *lhs_value.position()))
 }
 
-fn eval_path_expr(target_val: Value, member_val: Value, scope: &RuleScope) -> Value {
+fn eval_path_expr(target_val: Value, member_val: Value, scope: &RuleScope) -> Result<Value> {
     let (Type::Ident(target), Type::Ident(member)) = (target_val.t(), member_val.t()) else {
         // guaranteed by parser
         unreachable!()
@@ -80,7 +83,7 @@ fn eval_path_expr(target_val: Value, member_val: Value, scope: &RuleScope) -> Va
     let t = match var {
         Some(Type::Object(obj)) => {
             let Some(member) = obj.get_member(member) else {
-                todo!()
+                return Err(RuleError::runtime(RuntimeErrorKind::MemberNotDefined(member.to_owned(), target.to_owned()), *member_val.position()));
             };
 
             match member.kind {
@@ -91,38 +94,67 @@ fn eval_path_expr(target_val: Value, member_val: Value, scope: &RuleScope) -> Va
                 MemberKind::Method => Type::Method(obj.clone(), member.callable.clone()),
             }
         }
-        _ => todo!(),
+        Some(t) => {
+            return Err(RuleError::runtime(
+                RuntimeErrorKind::IncorrectType("object".to_owned(), t.type_string()),
+                *target_val.position(),
+            ))
+        }
+        None => {
+            return Err(RuleError::runtime(
+                RuntimeErrorKind::UnresolvedReference(target.to_owned()),
+                *target_val.position(),
+            ))
+        }
     };
 
     // todo: better position
-    Value::new(t, *target_val.position())
+    Ok(Value::new(t, *target_val.position()))
 }
 
-fn eval_call_expr(target: Value, args_val: Value, scope: &RuleScope) -> Value {
-    let Type::Many(mut args) = args_val.take_t() else {
-        // guaranteed by parser todo: verify if true
+fn eval_call_expr(target_val: Value, args_val: Value, scope: &RuleScope) -> Result<Value> {
+    let Type::List(mut args) = args_val.take_t() else {
+        // guaranteed by parser
         unreachable!()
     };
 
-    let func = match target.t() {
-        Type::Ident(target) => scope.get_var(target),
-        Type::Method(..) | Type::Function(..) => Some(target.t()),
-        _ => todo!(),
+    let func = {
+        if let Type::Ident(target) = target_val.t() {
+            scope.get_var(target).ok_or_else(|| {
+                RuleError::runtime(
+                    RuntimeErrorKind::UnresolvedReference(target.to_owned()),
+                    *target_val.position(),
+                )
+            })?
+        } else {
+            target_val.t()
+        }
     };
 
     match func {
-        Some(Type::Function(callable)) => {
+        Type::Function(callable) => {
             callable(args);
         }
-        Some(Type::Method(obj, callable)) => {
-            args.insert(0, Value::new(Type::Object(obj.clone()), *target.position()));
+        Type::Method(obj, callable) => {
+            args.insert(
+                0,
+                Value::new(Type::Object(obj.clone()), *target_val.position()),
+            );
             callable(args);
         }
-        _ => todo!(),
+        _ => {
+            return Err(RuleError::runtime(
+                RuntimeErrorKind::IncorrectType(
+                    "callable".to_string(),
+                    target_val.t().type_string(),
+                ),
+                *target_val.position(),
+            ));
+        }
     }
 
     // todo: better position
-    Value::new(Type::Bool(true), *target.position())
+    Ok(Value::new(Type::Bool(true), *target_val.position()))
 }
 
 #[derive(Debug)]

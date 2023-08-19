@@ -1,6 +1,7 @@
 use crate::request::Request;
 use crate::response::Response;
 use crate::rules::callable::wrap_callable;
+use crate::rules::error::RuleError;
 use crate::rules::grammar::{Statement, StatementKind};
 use crate::rules::object::IntoObject;
 use crate::rules::scope::RuleScope;
@@ -8,6 +9,8 @@ use crate::rules::value::Type;
 use log::info;
 use std::cell::RefCell;
 use std::rc::Rc;
+
+type Result<T> = std::result::Result<T, RuleError>;
 
 pub enum RuleEvaluationResult {
     Continue,
@@ -29,7 +32,7 @@ impl Rule {
         &self,
         request: Rc<RefCell<Request>>,
         response: Rc<RefCell<Response>>,
-    ) -> RuleEvaluationResult {
+    ) -> Result<RuleEvaluationResult> {
         let mut scope = RuleScope::new();
         scope.update_var("request", Type::Object(request.clone().into_object()));
         scope.update_var(
@@ -49,7 +52,7 @@ impl Rule {
         request: Rc<RefCell<Request>>,
         response: Rc<RefCell<Response>>,
         scope: &RuleScope,
-    ) -> RuleEvaluationResult {
+    ) -> Result<RuleEvaluationResult> {
         for statement in statements {
             let response = response.clone();
 
@@ -59,7 +62,7 @@ impl Rule {
                     out_response.set_status_code(*response_code);
                     out_response.set_header("Location", location);
 
-                    return RuleEvaluationResult::Finish;
+                    return Ok(RuleEvaluationResult::Finish);
                 }
                 StatementKind::Return(response_code, additional_data) => {
                     let mut out_response = response.borrow_mut();
@@ -73,10 +76,10 @@ impl Rule {
                         out_response.set_header("Content-Length", &body_len.to_string());
                     }
 
-                    return RuleEvaluationResult::Finish;
+                    return Ok(RuleEvaluationResult::Finish);
                 }
                 StatementKind::If(condition_expr, statements) => {
-                    let expr_value = condition_expr.eval(scope);
+                    let expr_value = condition_expr.eval(scope)?;
                     match expr_value.t() {
                         Type::Bool(val) => {
                             if *val {
@@ -85,10 +88,10 @@ impl Rule {
                                     request.clone(),
                                     response,
                                     scope,
-                                ) {
+                                )? {
                                     RuleEvaluationResult::Continue => {}
                                     RuleEvaluationResult::Finish => {
-                                        return RuleEvaluationResult::Finish
+                                        return Ok(RuleEvaluationResult::Finish)
                                     }
                                 }
                             }
@@ -97,11 +100,11 @@ impl Rule {
                     }
                 }
                 StatementKind::Expr(expr) => {
-                    expr.eval(scope);
+                    expr.eval(scope)?;
                 }
             }
         }
 
-        RuleEvaluationResult::Continue
+        Ok(RuleEvaluationResult::Continue)
     }
 }

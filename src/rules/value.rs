@@ -1,5 +1,5 @@
 use crate::rules::callable::Call;
-use crate::rules::error::{RuleError, SemanticErrorKind};
+use crate::rules::error::{RuleError, RuntimeErrorKind, SemanticErrorKind};
 use crate::rules::lexer::Position;
 use crate::rules::object::Object;
 use std::any::Any;
@@ -15,7 +15,23 @@ pub enum Type {
     Object(Object),
     Function(Rc<Call>),
     Method(Object, Rc<Call>),
-    Many(Vec<Value>),
+    List(Vec<Value>),
+}
+
+impl Type {
+    pub fn type_string(&self) -> String {
+        let s = match self {
+            Type::String(_) => "string",
+            Type::Int(_) => "int",
+            Type::Bool(_) => "bool",
+            Type::Ident(_) => "identifier",
+            Type::Object(_) => "object",
+            Type::Function(_) | Type::Method(_, _) => "callable",
+            Type::List(_) => "list",
+        };
+
+        s.to_owned()
+    }
 }
 
 #[derive(Clone)]
@@ -75,8 +91,8 @@ impl FromValue for Rc<RefCell<dyn Any>> {
         if let Type::Object(obj) = val.t() {
             Ok(obj.instance.clone())
         } else {
-            Err(RuleError::semantic(
-                SemanticErrorKind::IncorrectType,
+            Err(RuleError::runtime(
+                RuntimeErrorKind::IncorrectType("object".to_owned(), val.t().type_string()),
                 Position::zero(),
             ))
         }
