@@ -1,4 +1,4 @@
-use crate::rules::value::{FromVec, Value};
+use crate::rules::value::{FromVec, Type, Value};
 use std::rc::Rc;
 
 pub trait Function<Args = ()> {
@@ -40,12 +40,12 @@ where
     }
 }
 
-pub type Call = dyn Fn(Vec<Value>) -> Value;
+pub type Call = dyn Fn(Vec<Value>) -> Type;
 
 pub fn wrap_callable<F, Args>(func: F) -> Rc<Call>
 where
     Args: FromVec,
-    F: Function<Args, Result = Value> + 'static,
+    F: Function<Args, Result = Type> + 'static,
 {
     Rc::new(move |args| func.invoke(Args::from_vec(&args)))
 }

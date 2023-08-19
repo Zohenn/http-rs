@@ -4,7 +4,7 @@ use crate::rules::callable::wrap_callable;
 use crate::rules::grammar::{Statement, StatementKind};
 use crate::rules::object::IntoObject;
 use crate::rules::scope::RuleScope;
-use crate::rules::value::Value;
+use crate::rules::value::Type;
 use log::info;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -31,15 +31,15 @@ impl Rule {
         response: Rc<RefCell<Response>>,
     ) -> RuleEvaluationResult {
         let mut scope = RuleScope::new();
-        scope.update_var("request", Value::Object(request.clone().into_object()));
+        scope.update_var("request", Type::Object(request.clone().into_object()));
         scope.update_var(
             "log",
-            Value::Function(wrap_callable(|text: String| {
+            Type::Function(wrap_callable(|text: String| {
                 info!("{}", text);
-                Value::Bool(true)
+                Type::Bool(true)
             })),
         );
-        scope.update_var("response", Value::Object(response.clone().into_object()));
+        scope.update_var("response", Type::Object(response.clone().into_object()));
 
         Self::evaluate_statements(&self.statements, request, response, &scope)
     }
@@ -75,24 +75,27 @@ impl Rule {
 
                     return RuleEvaluationResult::Finish;
                 }
-                StatementKind::If(condition_expr, statements) => match condition_expr.eval(scope) {
-                    Value::Bool(val) => {
-                        if val {
-                            match Self::evaluate_statements(
-                                statements,
-                                request.clone(),
-                                response,
-                                scope,
-                            ) {
-                                RuleEvaluationResult::Continue => {}
-                                RuleEvaluationResult::Finish => {
-                                    return RuleEvaluationResult::Finish
+                StatementKind::If(condition_expr, statements) => {
+                    let expr_value = condition_expr.eval(scope);
+                    match expr_value.t() {
+                        Type::Bool(val) => {
+                            if *val {
+                                match Self::evaluate_statements(
+                                    statements,
+                                    request.clone(),
+                                    response,
+                                    scope,
+                                ) {
+                                    RuleEvaluationResult::Continue => {}
+                                    RuleEvaluationResult::Finish => {
+                                        return RuleEvaluationResult::Finish
+                                    }
                                 }
                             }
                         }
+                        _ => todo!(),
                     }
-                    _ => unreachable!(),
-                },
+                }
                 StatementKind::Expr(expr) => {
                     expr.eval(scope);
                 }

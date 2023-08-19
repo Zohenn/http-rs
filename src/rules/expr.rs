@@ -1,7 +1,7 @@
-use crate::rules::lexer::{RuleToken, RuleTokenKind};
+use crate::rules::lexer::{Position, RuleToken, RuleTokenKind};
 use crate::rules::object::MemberKind;
 use crate::rules::scope::RuleScope;
-use crate::rules::value::Value;
+use crate::rules::value::{Type, Value};
 
 #[derive(Debug)]
 pub enum Operator {
@@ -32,81 +32,97 @@ impl ExprOrValue {
                     val_args.push(arg.eval(scope));
                 }
 
-                Value::Many(val_args)
+                let position = val_args.first().map_or(Position::zero(), |v| *v.position());
+
+                // todo: better position
+                Value::new(Type::Many(val_args), position)
             }
         }
     }
 }
 
 fn eval_value(token: &RuleToken) -> Value {
-    match &token.kind {
-        RuleTokenKind::LitStr(s) => Value::String(s.clone()),
-        RuleTokenKind::LitInt(s) => Value::Int(s.parse::<u32>().unwrap()),
-        RuleTokenKind::Ident(s) => Value::Ident(s.clone()),
+    let t = match &token.kind {
+        RuleTokenKind::LitStr(s) => Type::String(s.clone()),
+        RuleTokenKind::LitInt(s) => Type::Int(s.parse::<u32>().unwrap()),
+        RuleTokenKind::Ident(s) => Type::Ident(s.clone()),
         _ => unreachable!(),
-    }
+    };
+
+    Value::new(t, token.position)
 }
 
 fn eval_expr(expr: &Expr, scope: &RuleScope) -> Value {
     let lhs_value = expr.lhs.eval(scope);
     let rhs_value = expr.rhs.eval(scope);
 
-    match expr.operator {
+    let t = match expr.operator {
         Operator::And => todo!(),
         Operator::Or => todo!(),
-        Operator::Eq => Value::Bool(lhs_value.eq(&rhs_value)),
-        Operator::NotEq => Value::Bool(lhs_value.ne(&rhs_value)),
-        Operator::Dot => eval_path_expr(lhs_value, rhs_value, scope),
-        Operator::Call => eval_call_expr(lhs_value, rhs_value, scope),
-    }
+        Operator::Eq => Type::Bool(lhs_value.eq(&rhs_value)),
+        Operator::NotEq => Type::Bool(lhs_value.ne(&rhs_value)),
+        Operator::Dot => return eval_path_expr(lhs_value, rhs_value, scope),
+        Operator::Call => return eval_call_expr(lhs_value, rhs_value, scope),
+    };
+
+    // todo: better position
+    Value::new(t, *lhs_value.position())
 }
 
-fn eval_path_expr(target: Value, member: Value, scope: &RuleScope) -> Value {
-    let (Value::Ident(target), Value::Ident(member)) = (target, member) else {
+fn eval_path_expr(target_val: Value, member_val: Value, scope: &RuleScope) -> Value {
+    let (Type::Ident(target), Type::Ident(member)) = (target_val.t(), member_val.t()) else {
         // guaranteed by parser
         unreachable!()
     };
 
-    let var = scope.get_var(&target);
+    let var = scope.get_var(target);
 
-    match var {
-        Some(Value::Object(obj)) => {
-            let Some(member) = obj.get_member(&member) else {
+    let t = match var {
+        Some(Type::Object(obj)) => {
+            let Some(member) = obj.get_member(member) else {
                 todo!()
             };
 
             match member.kind {
-                MemberKind::Field => member.eval(vec![var.unwrap().clone()]),
-                MemberKind::Method => Value::Method(obj.clone(), member.callable.clone()),
+                MemberKind::Field => member.eval(vec![Value::new(
+                    var.unwrap().clone(),
+                    *target_val.position(),
+                )]),
+                MemberKind::Method => Type::Method(obj.clone(), member.callable.clone()),
             }
         }
         _ => todo!(),
-    }
+    };
+
+    // todo: better position
+    Value::new(t, *target_val.position())
 }
 
-fn eval_call_expr(target: Value, args: Value, scope: &RuleScope) -> Value {
-    let Value::Many(mut args) = args else {
+fn eval_call_expr(target: Value, args_val: Value, scope: &RuleScope) -> Value {
+    let Type::Many(mut args) = args_val.take_t() else {
+        // guaranteed by parser todo: verify if true
         unreachable!()
     };
 
-    let func = match &target {
-        Value::Ident(target) => scope.get_var(target),
-        Value::Method(..) | Value::Function(..) => Some(&target),
+    let func = match target.t() {
+        Type::Ident(target) => scope.get_var(target),
+        Type::Method(..) | Type::Function(..) => Some(target.t()),
         _ => todo!(),
     };
 
     match func {
-        Some(Value::Function(callable)) => {
+        Some(Type::Function(callable)) => {
             callable(args);
         }
-        Some(Value::Method(obj, callable)) => {
-            args.insert(0, Value::Object(obj.clone()));
+        Some(Type::Method(obj, callable)) => {
+            args.insert(0, Value::new(Type::Object(obj.clone()), *target.position()));
             callable(args);
         }
         _ => todo!(),
     }
 
-    Value::Bool(true)
+    // todo: better position
+    Value::new(Type::Bool(true), *target.position())
 }
 
 #[derive(Debug)]

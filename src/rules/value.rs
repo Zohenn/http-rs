@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Clone)]
-pub enum Value {
+pub enum Type {
     String(String),
     Int(u32),
     Bool(bool),
@@ -18,11 +18,35 @@ pub enum Value {
     Many(Vec<Value>),
 }
 
+#[derive(Clone)]
+pub struct Value {
+    t: Type,
+    position: Position,
+}
+
+impl Value {
+    pub fn new(t: Type, position: Position) -> Self {
+        Value { t, position }
+    }
+
+    pub fn t(&self) -> &Type {
+        &self.t
+    }
+
+    pub fn take_t(self) -> Type {
+        self.t
+    }
+
+    pub fn position(&self) -> &Position {
+        &self.position
+    }
+}
+
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Value::String(s1), Value::String(s2)) => s1.eq(s2),
-            (Value::Int(i1), Value::Int(i2)) => i1.eq(i2),
+        match (&self.t, &other.t) {
+            (Type::String(s1), Type::String(s2)) => s1.eq(s2),
+            (Type::Int(i1), Type::Int(i2)) => i1.eq(i2),
             _ => todo!(),
             // Value::Int(_) => {}
             // Value::Bool(_) => {}
@@ -37,7 +61,7 @@ pub trait FromValue: Sized {
 
 impl FromValue for String {
     fn from_value(val: &Value) -> Result<Self, RuleError> {
-        if let Value::String(s) = val {
+        if let Type::String(s) = val.t() {
             Ok(s.clone())
         } else {
             todo!("Error");
@@ -48,7 +72,7 @@ impl FromValue for String {
 
 impl FromValue for Rc<RefCell<dyn Any>> {
     fn from_value(val: &Value) -> Result<Self, RuleError> {
-        if let Value::Object(obj) = val {
+        if let Type::Object(obj) = val.t() {
             Ok(obj.instance.clone())
         } else {
             Err(RuleError::semantic(
