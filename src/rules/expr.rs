@@ -77,7 +77,7 @@ fn eval_path_expr(target: Value, member: Value, scope: &RuleScope) -> Value {
 
             match member.kind {
                 MemberKind::Field => member.eval(vec![var.unwrap().clone()]),
-                MemberKind::Method => Value::CallableMethod(obj.clone(), member.callable.clone()),
+                MemberKind::Method => Value::Method(obj.clone(), member.callable.clone()),
             }
         }
         _ => todo!(),
@@ -91,15 +91,15 @@ fn eval_call_expr(target: Value, args: Value, scope: &RuleScope) -> Value {
 
     let func = match &target {
         Value::Ident(target) => scope.get_var(target),
-        Value::CallableMethod(..) | Value::Callable(..) => Some(&target),
+        Value::Method(..) | Value::Function(..) => Some(&target),
         _ => todo!(),
     };
 
     match func {
-        Some(Value::Callable(callable)) => {
+        Some(Value::Function(callable)) => {
             callable(args);
         }
-        Some(Value::CallableMethod(obj, callable)) => {
+        Some(Value::Method(obj, callable)) => {
             args.insert(0, Value::Object(obj.clone()));
             callable(args);
         }

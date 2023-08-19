@@ -1,10 +1,9 @@
 use crate::response_status_code::ResponseStatusCode;
 use crate::rules::error::{RuleError, SemanticErrorKind, SyntaxErrorKind};
 use crate::rules::expr::{Expr, ExprOrValue, Operator};
-use crate::rules::lexer::{Position, RuleToken, RuleTokenKind};
+use crate::rules::lexer::{RuleToken, RuleTokenKind};
 use crate::rules::Rule;
-use std::error::Error;
-use std::fmt::{format, Display, Formatter};
+use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
@@ -14,14 +13,7 @@ type TokenIter = Peekable<IntoIter<RuleToken>>;
 static EOF_TOKEN: RuleToken = RuleToken::eof();
 
 #[derive(Debug)]
-pub enum Lit {
-    String(String),
-    Int(String),
-}
-
-#[derive(Debug)]
 pub enum StatementKind {
-    Func(String, Vec<Lit>),
     Redirect(ResponseStatusCode, String),
     Return(ResponseStatusCode, Option<String>),
     If(ExprOrValue, Vec<Statement>),
@@ -31,7 +23,6 @@ pub enum StatementKind {
 impl Display for StatementKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let str_value = match self {
-            StatementKind::Func(_, _) => "function call",
             StatementKind::Redirect(_, _) => "redirect",
             StatementKind::Return(_, _) => "return",
             StatementKind::If(_, _) => "if",
@@ -72,7 +63,6 @@ pub fn rule(iter: &mut TokenIter) -> Result<Rule> {
 
     let rule = Rule {
         pattern,
-        actions: vec![],
         statements,
     };
 
@@ -115,65 +105,17 @@ pub fn rule_statements(iter: &mut TokenIter) -> Result<Vec<Statement>> {
 }
 
 pub fn base_statement(iter: &mut TokenIter) -> Result<Statement> {
-    match iter.peek() {
-        Some(RuleToken {
-            kind: RuleTokenKind::Ident(name),
-            ..
-        }) if name != "set_header" => {
-            let expression = expr(iter)?;
-            swallow(iter, RuleTokenKind::Semicolon)?;
-
-            return Ok(Statement {
-                kind: StatementKind::Expr(expression),
-            });
-        }
-        _ => {}
-    }
-
-    let statement = match iter.next() {
-        Some(RuleToken {
-            kind: RuleTokenKind::Ident(name),
-            ..
-        }) => {
-            let mut args: Vec<Lit> = vec![];
-
-            swallow(iter, RuleTokenKind::LParen)?;
-
-            while let Some(token) = iter.peek() {
-                match &token.kind {
-                    RuleTokenKind::LitStr(str_val) => {
-                        args.push(Lit::String(str_val.clone()));
-                        iter.next();
-                    }
-                    RuleTokenKind::LitInt(int_val) => {
-                        args.push(Lit::Int(int_val.clone()));
-                        iter.next();
-                    }
-                    RuleTokenKind::Comma => {
-                        swallow(iter, RuleTokenKind::Comma)?;
-                    }
-                    RuleTokenKind::RParen => break,
-                    _ => {
-                        return Err(RuleError::syntax(
-                            SyntaxErrorKind::UnexpectedToken(token.kind.to_string()),
-                            token.position,
-                        ))
-                    }
-                }
-            }
-
-            swallow(iter, RuleTokenKind::RParen)?;
-            swallow(iter, RuleTokenKind::Semicolon)?;
-
-            Statement {
-                kind: StatementKind::Func(name, args),
-            }
-        }
-        Some(_) => todo!(),
-        _ => unreachable!(),
+    let Some(RuleToken { kind: RuleTokenKind::Ident(_), .. }) = iter.peek() else {
+        // guaranteed by caller
+        unreachable!()
     };
 
-    Ok(statement)
+    let expression = expr(iter)?;
+    swallow(iter, RuleTokenKind::Semicolon)?;
+
+    Ok(Statement {
+        kind: StatementKind::Expr(expression),
+    })
 }
 
 pub fn redirect_statement(iter: &mut TokenIter) -> Result<Statement> {

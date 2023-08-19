@@ -1,6 +1,7 @@
 use crate::rules::value::Value;
 use std::collections::HashMap;
 
+#[derive(Default)]
 pub struct RuleScope {
     vars: HashMap<String, Value>,
 }

@@ -3,7 +3,7 @@ use crate::request::{parse_chunked_body, parse_request, Request, RequestBodyType
 use crate::request_method::RequestMethod;
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
-use crate::rules::{parse_file, Rule, RuleAction, RuleEvaluationResult};
+use crate::rules::{parse_file, Rule, RuleEvaluationResult};
 use crate::server_config::{KeepAliveConfig, ServerConfig};
 use crate::types::IoResult;
 use log::{debug, error, info};

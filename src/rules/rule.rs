@@ -1,21 +1,13 @@
 use crate::request::Request;
 use crate::response::Response;
-use crate::response_status_code::ResponseStatusCode;
 use crate::rules::callable::wrap_callable;
-use crate::rules::grammar::{Lit, Statement, StatementKind};
+use crate::rules::grammar::{Statement, StatementKind};
 use crate::rules::object::IntoObject;
 use crate::rules::scope::RuleScope;
 use crate::rules::value::Value;
 use log::info;
 use std::cell::RefCell;
 use std::rc::Rc;
-
-#[derive(Debug, PartialEq)]
-pub enum RuleAction {
-    SetHeader(String, String),
-    RedirectReturn(ResponseStatusCode, String),
-    CustomReturn(ResponseStatusCode, Option<String>),
-}
 
 pub enum RuleEvaluationResult {
     Continue,
@@ -25,15 +17,10 @@ pub enum RuleEvaluationResult {
 #[derive(Debug)]
 pub struct Rule {
     pub pattern: String,
-    pub actions: Vec<RuleAction>,
     pub statements: Vec<Statement>,
 }
 
 impl Rule {
-    pub fn builder() -> RuleBuilder {
-        RuleBuilder::new()
-    }
-
     pub fn matches(&self, url: &str) -> bool {
         !url.matches(&self.pattern).collect::<Vec<&str>>().is_empty()
     }
@@ -47,7 +34,7 @@ impl Rule {
         scope.update_var("request", Value::Object(request.clone().into_object()));
         scope.update_var(
             "log",
-            Value::Callable(wrap_callable(|text: String| {
+            Value::Function(wrap_callable(|text: String| {
                 info!("{}", text);
                 Value::Bool(true)
             })),
@@ -67,17 +54,6 @@ impl Rule {
             let response = response.clone();
 
             match &statement.kind {
-                StatementKind::Func(func_name, args) => {
-                    if func_name == "set_header" {
-                        match &args[..] {
-                            [Lit::String(arg1), Lit::String(arg2)] => {
-                                let mut out_response = response.borrow_mut();
-                                out_response.set_header(arg1, arg2);
-                            }
-                            _ => panic!(),
-                        }
-                    }
-                }
                 StatementKind::Redirect(response_code, location) => {
                     let mut out_response = response.borrow_mut();
                     out_response.set_status_code(*response_code);
@@ -124,37 +100,5 @@ impl Rule {
         }
 
         RuleEvaluationResult::Continue
-    }
-}
-
-pub struct RuleBuilder {
-    rule: Rule,
-}
-
-impl RuleBuilder {
-    fn new() -> Self {
-        RuleBuilder {
-            rule: Rule {
-                pattern: String::new(),
-                actions: vec![],
-                statements: vec![],
-            },
-        }
-    }
-
-    pub fn pattern(mut self, pattern: String) -> Self {
-        self.rule.pattern = pattern;
-
-        self
-    }
-
-    pub fn add_action(mut self, action: RuleAction) -> Self {
-        self.rule.actions.push(action);
-
-        self
-    }
-
-    pub fn get(self) -> Rule {
-        self.rule
     }
 }

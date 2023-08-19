@@ -1,6 +1,6 @@
 use crate::rules::lexer::Position;
 use std::error::Error;
-use std::fmt::{write, Display, Formatter};
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub enum SyntaxErrorKind {
@@ -28,7 +28,7 @@ impl Display for SyntaxErrorKind {
 #[derive(Debug)]
 pub enum SemanticErrorKind {
     UnexpectedStatement(String),
-    IncorrectType,
+    IncorrectType, // todo: move this to runtime error
 }
 
 impl Display for SemanticErrorKind {

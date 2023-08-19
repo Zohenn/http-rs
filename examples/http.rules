@@ -1,21 +1,18 @@
 matches / {
     response.set_header("Server", "http-rs");
+    response.set_header("X-Method", request.method);
 
-    if 1 == 2 {
-        set_header("Server", "http-rs2");
+    if 1 == 1 {
+        response.set_header("X-Server", "http-rs2");
     }
 
     if 1 == 2 {
-        set_header("Server", "http-rs3");
+        response.set_header("X-Server", "http-rs3");
     }
 
     if request.method == "GET" {
-        set_header("X-Method", "http-get");
+        log("hi from rule");
     }
-}
-
-matches /index.html {
-    log("hi from rule");
 }
 
 matches /index2.html {

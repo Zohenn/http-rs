@@ -13,8 +13,8 @@ pub enum Value {
     Bool(bool),
     Ident(String),
     Object(Object),
-    Callable(Rc<Call>),
-    CallableMethod(Object, Rc<Call>),
+    Function(Rc<Call>),
+    Method(Object, Rc<Call>),
     Many(Vec<Value>),
 }
 
@@ -44,10 +44,6 @@ impl FromValue for String {
             Ok(String::new())
         }
     }
-}
-
-fn print_type_of<T>(_: &T) {
-    println!("{}", std::any::type_name::<T>())
 }
 
 impl FromValue for Rc<RefCell<dyn Any>> {
