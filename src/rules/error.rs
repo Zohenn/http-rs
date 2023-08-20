@@ -120,3 +120,16 @@ impl Display for RuleError {
 }
 
 impl Error for RuleError {}
+
+pub fn format_error_in_file(err: RuleError, file_contents: &String) -> String {
+    let base_err = err.to_string();
+
+    let lines = file_contents.lines().collect::<Vec<&str>>();
+
+    let pos = err.position();
+    let line_indent = format!("{} | ", pos.line);
+    let line = lines.get(pos.line as usize - 1).unwrap_or(&"");
+    let caret_indent = " ".repeat(line_indent.len() + pos.column as usize - 1);
+
+    format!("{base_err}\n{line_indent}{line}\n{caret_indent}^")
+}

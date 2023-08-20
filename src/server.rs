@@ -3,7 +3,7 @@ use crate::request::{parse_chunked_body, parse_request, Request, RequestBodyType
 use crate::request_method::RequestMethod;
 use crate::response::{Response, ResponseBuilder};
 use crate::response_status_code::ResponseStatusCode;
-use crate::rules::{parse_file, Rule, RuleEvaluationResult};
+use crate::rules::{parse_file, RuleEvaluationResult, format_error_in_file, Rules};
 use crate::server_config::{KeepAliveConfig, ServerConfig};
 use crate::types::IoResult;
 use log::{debug, error, info};
@@ -20,7 +20,7 @@ type RequestListener = dyn Fn(&Request) -> Option<Response> + Send + Sync;
 #[derive(Clone)]
 pub struct Server {
     config: Arc<ServerConfig>,
-    rules: Arc<Vec<Rule>>,
+    rules: Arc<Rules>,
     https_config: Option<Arc<rustls::ServerConfig>>,
     listener: Option<Arc<RequestListener>>,
 }
@@ -33,11 +33,11 @@ impl Server {
                     Ok(rules) => rules,
                     Err(e) => {
                         error!("\nError parsing rules file: {e}");
-                        vec![]
+                        Rules::default()
                     }
                 }
             }
-            _ => vec![],
+            _ => Rules::default(),
         };
 
         Server {
@@ -277,7 +277,7 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
                         HandleConnectionState::ClientError(None, ResponseStatusCode::RequestTimeout)
                     }
                     _ => HandleConnectionState::Error(err.kind()),
-                }
+                };
             }
         };
 
@@ -358,8 +358,8 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
         let should_close = !self.persistent
             || self.served_requests_count == self.max_requests - 1
             || request
-                .as_ref()
-                .is_some_and(|request| request.borrow().has_header("Connection", Some("close")));
+            .as_ref()
+            .is_some_and(|request| request.borrow().has_header("Connection", Some("close")));
 
         if should_close {
             response.set_header("Connection", "close");
@@ -389,10 +389,10 @@ impl<'server, 'connection, 'stream> HandleConnectionStateMachine<'server, 'conne
     }
 }
 
-fn apply_rules(rules: &[Rule], request: Rc<RefCell<Request>>, response: Response) -> Response {
+fn apply_rules(rules: &Rules, request: Rc<RefCell<Request>>, response: Response) -> Response {
     let out_response = Rc::new(RefCell::new(response));
 
-    for rule in rules {
+    for rule in &rules.rules {
         if !rule.matches(&request.borrow().url) {
             continue;
         }
@@ -400,10 +400,10 @@ fn apply_rules(rules: &[Rule], request: Rc<RefCell<Request>>, response: Response
         match rule.evaluate(request.clone(), out_response.clone()) {
             Ok(RuleEvaluationResult::Continue) => {}
             Ok(RuleEvaluationResult::Finish) => {
-                return Rc::try_unwrap(out_response).unwrap().into_inner()
+                return Rc::try_unwrap(out_response).unwrap().into_inner();
             }
             Err(e) => {
-                error!("{e}")
+                error!("Error during rule evaluation:\n{}", format_error_in_file(e, &rules.file))
                 // todo: 500?
             }
         }
