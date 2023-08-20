@@ -108,6 +108,13 @@ impl IntoObject for Rc<RefCell<Response>> {
                     Type::Bool(true)
                 },
             )
+            .add_field(
+                "status_code",
+                |instance: Rc<RefCell<dyn Any>>| {
+                    let instance = downcast_instance_ref::<Response>(&instance);
+                    Type::Int((*instance.status_code()) as u32)
+                },
+            )
             .get(self)
     }
 }

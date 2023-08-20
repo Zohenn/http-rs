@@ -13,6 +13,10 @@ matches / {
     if request.method == "GET" {
         log("hi from rule");
     }
+
+    if request.method == "POST" && response.status_code == 200 {
+        log("POST request with 200 response");
+    }
 }
 
 matches /index2.html {

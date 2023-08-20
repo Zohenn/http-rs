@@ -18,4 +18,4 @@ A very noob attempt at writing code in Rust.
 
 ### mightdo
 - [ ] HTTP/2 support
-- [ ] something similar to nginx rewrite rules or .htaccess files
+- [x] something similar to nginx rewrite rules or .htaccess files

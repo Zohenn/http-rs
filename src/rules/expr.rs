@@ -60,8 +60,7 @@ fn eval_expr(expr: &Expr, scope: &RuleScope) -> Result<Value> {
     let rhs_value = expr.rhs.eval(scope)?;
 
     let t = match expr.operator {
-        Operator::And => todo!(),
-        Operator::Or => todo!(),
+        Operator::And | Operator::Or => return eval_bool_expr(&lhs_value, &expr.operator, &rhs_value),
         Operator::Eq => Type::Bool(lhs_value.eq(&rhs_value)),
         Operator::NotEq => Type::Bool(lhs_value.ne(&rhs_value)),
         Operator::Dot => return eval_path_expr(lhs_value, rhs_value, scope),
@@ -70,6 +69,35 @@ fn eval_expr(expr: &Expr, scope: &RuleScope) -> Result<Value> {
 
     // todo: better position
     Ok(Value::new(t, *lhs_value.position()))
+}
+
+fn eval_bool_expr(lhs_value: &Value, operator: &Operator, rhs_value: &Value) -> Result<Value> {
+    let mut values = [false; 2];
+
+    for (index, value) in [lhs_value, rhs_value].iter().enumerate() {
+        let Type::Bool(v) = value.t() else {
+            return Err(
+                RuleError::runtime(
+                    RuntimeErrorKind::IncorrectType("bool".to_owned(), value.t().type_string()),
+                    *value.position(),
+                )
+            );
+        };
+
+        values[index] = *v;
+    }
+
+    let expr_value = match operator {
+        Operator::And => values[0] && values[1],
+        Operator::Or => values[0] || values[1],
+        _ => {
+            // guaranteed by caller
+            unreachable!()
+        },
+    };
+
+    // todo: better position
+    Ok(Value::new(Type::Bool(expr_value), *lhs_value.position()))
 }
 
 fn eval_path_expr(target_val: Value, member_val: Value, scope: &RuleScope) -> Result<Value> {
@@ -98,13 +126,13 @@ fn eval_path_expr(target_val: Value, member_val: Value, scope: &RuleScope) -> Re
             return Err(RuleError::runtime(
                 RuntimeErrorKind::IncorrectType("object".to_owned(), t.type_string()),
                 *target_val.position(),
-            ))
+            ));
         }
         None => {
             return Err(RuleError::runtime(
                 RuntimeErrorKind::UnresolvedReference(target.to_owned()),
                 *target_val.position(),
-            ))
+            ));
         }
     };
 
