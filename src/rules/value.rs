@@ -63,10 +63,8 @@ impl PartialEq for Value {
         match (&self.t, &other.t) {
             (Type::String(s1), Type::String(s2)) => s1.eq(s2),
             (Type::Int(i1), Type::Int(i2)) => i1.eq(i2),
-            _ => todo!(),
-            // Value::Int(_) => {}
-            // Value::Bool(_) => {}
-            // Value::Object => {}
+            (Type::Bool(b1), Type::Bool(b2)) => b1.eq(b2),
+            _ => false,
         }
     }
 }

@@ -245,6 +245,10 @@ impl<'a> LexerIter<'a> {
             .0
     }
 
+    fn read_until_lf(&mut self) -> String {
+        self.read_until_inner(|next: &char| next != &'\n').0
+    }
+
     fn read_until_inner(&mut self, condition: impl Fn(&char) -> bool) -> (String, Option<char>) {
         let mut output = String::new();
 
@@ -333,6 +337,12 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
                     ))
                 }
             },
+            '#' => {
+                // This is a comment
+                iter.read_until_lf();
+                iter.skip_whitespace();
+                continue;
+            }
             'a'..='z' | 'A'..='Z' | '_' => {
                 let ident = String::from(character);
                 let ident = ident + &iter.read_ident();
