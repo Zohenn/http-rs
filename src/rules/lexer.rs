@@ -1,6 +1,7 @@
 use crate::rules::error::{RuleError, SyntaxErrorKind};
 use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
+use std::ops::Add;
 use std::str::Chars;
 
 type Result<T> = std::result::Result<T, RuleError>;
@@ -49,13 +50,13 @@ impl RuleTokenKind {
             RuleTokenKind::NotEq => 2,
             RuleTokenKind::And => 2,
             RuleTokenKind::Or => 2,
-            RuleTokenKind::LitStr(val) => val.len() as u16, // + 2 to account for "?
+            RuleTokenKind::LitStr(val) => val.len() as u16 + 2,
             RuleTokenKind::LitInt(val) => val.len() as u16,
             RuleTokenKind::Matches => 7,
             RuleTokenKind::Redirect => 8,
             RuleTokenKind::Return => 6,
             RuleTokenKind::If => 2,
-            RuleTokenKind::Eof => 0,
+            RuleTokenKind::Eof => 1,
         }
     }
 
@@ -105,6 +106,40 @@ impl Position {
             line: 0,
             column: 0,
             len: 0,
+        }
+    }
+
+    // todo: Might produce funny results if lines differ
+    pub fn sum(positions: &[Position]) -> Self {
+        if positions.is_empty() {
+            return Position::zero();
+        }
+
+        let (first, last) = (positions.first().unwrap(), positions.last().unwrap());
+
+        Position {
+            line: first.line,
+            column: first.column,
+            len: (last.line - first.line) as u16 + last.len,
+        }
+    }
+
+    pub fn with_len(mut self, len: u16) -> Self {
+        self.len = len;
+
+        self
+    }
+}
+
+impl Add for &Position {
+    type Output = Position;
+
+    // todo: Might produce funny results if lines differ
+    fn add(self, rhs: Self) -> Self::Output {
+        Position {
+            line: self.line,
+            column: self.column,
+            len: (rhs.column - self.column) as u16 + rhs.len,
         }
     }
 }
@@ -324,8 +359,8 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
         };
 
         tokens.push(RuleToken {
+            position: position.with_len(token.len()),
             kind: token,
-            position: position,
         });
 
         // todo: change this in some way, lexer is not the best place for this
@@ -339,7 +374,7 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<RuleToken>> {
 
                 tokens.push(RuleToken {
                     kind: RuleTokenKind::LitStr(iter.read_until_whitespace()),
-                    position: position,
+                    position,
                 });
             }
             _ => {}

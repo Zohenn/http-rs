@@ -145,6 +145,7 @@ pub fn format_error_in_file(err: RuleError, file_contents: &str) -> String {
     let line_indent = format!("{} | ", pos.line);
     let line = lines.get(pos.line as usize - 1).unwrap_or(&"");
     let caret_indent = " ".repeat(line_indent.len() + pos.column as usize - 1);
+    let caret = "^".repeat(pos.len as usize);
 
-    format!("{base_err}\n{line_indent}{line}\n{caret_indent}^")
+    format!("{base_err}\n{line_indent}{line}\n{caret_indent}{caret}")
 }

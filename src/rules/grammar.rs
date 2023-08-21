@@ -287,7 +287,7 @@ fn primary(iter: &mut TokenIter) -> Result<ExprOrValue> {
                     Ok(ExprOrValue::Expr(Expr {
                         lhs: target.into(),
                         operator: Operator::Call,
-                        rhs: ExprOrValue::Many(args).into(),
+                        rhs: ExprOrValue::List(args).into(),
                     }))
                 }
                 _ => Ok(target),

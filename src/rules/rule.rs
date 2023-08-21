@@ -1,7 +1,7 @@
 use crate::request::Request;
 use crate::response::Response;
 use crate::rules::callable::wrap_callable;
-use crate::rules::error::RuleError;
+use crate::rules::error::{RuleError, RuntimeErrorKind};
 use crate::rules::grammar::{Statement, StatementKind};
 use crate::rules::object::IntoObject;
 use crate::rules::scope::RuleScope;
@@ -96,7 +96,15 @@ impl Rule {
                                 }
                             }
                         }
-                        _ => todo!(),
+                        _ => {
+                            return Err(RuleError::runtime(
+                                RuntimeErrorKind::IncorrectType(
+                                    "bool".to_owned(),
+                                    expr_value.t().type_string(),
+                                ),
+                                *expr_value.position(),
+                            ))
+                        }
                     }
                 }
                 StatementKind::Expr(expr) => {

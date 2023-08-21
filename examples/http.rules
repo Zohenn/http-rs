@@ -19,6 +19,15 @@ matches / {
     }
 }
 
+matches /errors {
+    response.set_header("Server", log("123"));
+    response.set_header("Server", request.method == "POST" && response.status_code == 200);
+
+    if request.method == "POST" && response.status_code {
+
+    }
+}
+
 matches /index2.html {
     redirect 301 "/index.html";
 }
