@@ -1,3 +1,4 @@
+use crate::rules::error::RuleError;
 use crate::rules::value::{FromVec, Type, Value};
 use std::rc::Rc;
 
@@ -40,12 +41,12 @@ where
     }
 }
 
-pub type Call = dyn Fn(Vec<Value>) -> Type;
+pub type Call = dyn Fn(Vec<Value>) -> Result<Type, RuleError>;
 
 pub fn wrap_callable<F, Args>(func: F) -> Rc<Call>
 where
     Args: FromVec,
-    F: Function<Args, Result = Type> + 'static,
+    F: Function<Args, Result = Result<Type, RuleError>> + 'static,
 {
-    Rc::new(move |args| func.invoke(Args::from_vec(&args)))
+    Rc::new(move |args| func.invoke(Args::from_vec(&args)?))
 }

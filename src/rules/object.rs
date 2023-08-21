@@ -1,6 +1,7 @@
 use crate::request::Request;
 use crate::response::Response;
 use crate::rules::callable::{wrap_callable, Call, Function};
+use crate::rules::error::RuleError;
 use crate::rules::value::{FromVec, Type, Value};
 use std::any::Any;
 use std::cell::{Ref, RefCell, RefMut};
@@ -47,7 +48,7 @@ impl ObjectBuilder {
     pub fn add_field<Args, F>(mut self, ident: &str, callable: F) -> Self
     where
         Args: FromVec,
-        F: Function<Args, Result = Type> + 'static,
+        F: Function<Args, Result = Result<Type, RuleError>> + 'static,
     {
         self.members
             .insert(ident.to_owned(), Member::field(wrap_callable(callable)));
@@ -58,7 +59,7 @@ impl ObjectBuilder {
     pub fn add_method<Args, F>(mut self, ident: &str, callable: F) -> Self
     where
         Args: FromVec,
-        F: Function<Args, Result = Type> + 'static,
+        F: Function<Args, Result = Result<Type, RuleError>> + 'static,
     {
         self.members
             .insert(ident.to_owned(), Member::method(wrap_callable(callable)));
@@ -91,7 +92,7 @@ impl IntoObject for Rc<RefCell<Request>> {
         Object::builder()
             .add_field("method", |instance: Rc<RefCell<dyn Any>>| {
                 let instance = downcast_instance_ref::<Request>(&instance);
-                Type::String(instance.method.to_string())
+                Ok(Type::String(instance.method.to_string()))
             })
             .get(self)
     }
@@ -105,16 +106,13 @@ impl IntoObject for Rc<RefCell<Response>> {
                 |instance: Rc<RefCell<dyn Any>>, name: String, value: String| {
                     let mut instance = downcast_instance_mut::<Response>(&instance);
                     instance.set_header(&name, &value);
-                    Type::Bool(true)
+                    Ok(Type::Bool(true))
                 },
             )
-            .add_field(
-                "status_code",
-                |instance: Rc<RefCell<dyn Any>>| {
-                    let instance = downcast_instance_ref::<Response>(&instance);
-                    Type::Int((*instance.status_code()) as u32)
-                },
-            )
+            .add_field("status_code", |instance: Rc<RefCell<dyn Any>>| {
+                let instance = downcast_instance_ref::<Response>(&instance);
+                Ok(Type::Int((*instance.status_code()) as u32))
+            })
             .get(self)
     }
 }
@@ -146,7 +144,7 @@ impl Member {
         }
     }
 
-    pub fn eval(&self, args: Vec<Value>) -> Type {
+    pub fn eval(&self, args: Vec<Value>) -> Result<Type, RuleError> {
         self.callable.as_ref()(args)
     }
 }

@@ -43,6 +43,7 @@ pub enum RuntimeErrorKind {
     IncorrectType(String, String),
     UnresolvedReference(String),
     MemberNotDefined(String, String),
+    TooFewArguments(usize, usize),
 }
 
 impl Display for RuntimeErrorKind {
@@ -54,6 +55,12 @@ impl Display for RuntimeErrorKind {
             RuntimeErrorKind::UnresolvedReference(s) => write!(f, "Unresolved reference \"{s}\""),
             RuntimeErrorKind::MemberNotDefined(member, object) => {
                 write!(f, "Member \"{member}\" is not defined on \"{object}\"")
+            }
+            RuntimeErrorKind::TooFewArguments(expected, got) => {
+                write!(
+                    f,
+                    "Function takes {expected} arguments, but {got} arguments were passed"
+                )
             }
         }
     }
@@ -83,6 +90,10 @@ pub struct RuleError {
 }
 
 impl RuleError {
+    pub fn new(kind: RuleErrorKind, position: Position) -> Self {
+        RuleError { kind, position }
+    }
+
     pub fn syntax(kind: SyntaxErrorKind, position: Position) -> Self {
         RuleError {
             kind: RuleErrorKind::Syntax(kind),
@@ -104,6 +115,10 @@ impl RuleError {
         }
     }
 
+    pub fn kind_owned(self) -> RuleErrorKind {
+        self.kind
+    }
+
     pub fn position(&self) -> &Position {
         &self.position
     }
@@ -121,7 +136,7 @@ impl Display for RuleError {
 
 impl Error for RuleError {}
 
-pub fn format_error_in_file(err: RuleError, file_contents: &String) -> String {
+pub fn format_error_in_file(err: RuleError, file_contents: &str) -> String {
     let base_err = err.to_string();
 
     let lines = file_contents.lines().collect::<Vec<&str>>();

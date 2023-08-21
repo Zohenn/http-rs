@@ -39,7 +39,7 @@ impl Rule {
             "log",
             Type::Function(wrap_callable(|text: String| {
                 info!("{}", text);
-                Type::Bool(true)
+                Ok(Type::Bool(true))
             })),
         );
         scope.update_var("response", Type::Object(response.clone().into_object()));

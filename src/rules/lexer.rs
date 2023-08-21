@@ -92,7 +92,7 @@ impl Display for RuleTokenKind {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Position {
     pub line: u32,
     pub column: u32,

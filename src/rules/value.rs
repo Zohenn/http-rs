@@ -80,8 +80,10 @@ impl FromValue for String {
         if let Type::String(s) = val.t() {
             Ok(s.clone())
         } else {
-            todo!("Error");
-            Ok(String::new())
+            Err(RuleError::runtime(
+                RuntimeErrorKind::IncorrectType("string".to_owned(), val.t().type_string()),
+                *val.position(),
+            ))
         }
     }
 }
@@ -100,39 +102,53 @@ impl FromValue for Rc<RefCell<dyn Any>> {
 }
 
 pub trait FromVec {
-    fn from_vec(values: &[Value]) -> Self
+    fn from_vec(values: &[Value]) -> Result<Self, RuleError>
     where
         Self: Sized;
 }
 
 impl FromVec for () {
-    fn from_vec(_values: &[Value]) -> Self
+    fn from_vec(_values: &[Value]) -> Result<Self, RuleError>
     where
         Self: Sized,
     {
+        Ok(())
     }
 }
 
+fn next_vec_value<'a>(
+    iter: &'a mut dyn Iterator<Item = &Value>,
+    expected_count: usize,
+    got_count: usize,
+) -> Result<&'a Value, RuleError> {
+    iter.next().ok_or_else(|| {
+        RuleError::runtime(
+            RuntimeErrorKind::TooFewArguments(expected_count, got_count),
+            Position::zero(),
+        )
+    })
+}
+
 impl<A: FromValue> FromVec for (A,) {
-    fn from_vec(values: &[Value]) -> Self
+    fn from_vec(values: &[Value]) -> Result<Self, RuleError>
     where
         Self: Sized,
     {
         let mut iter = values.iter();
-        (A::from_value(iter.next().unwrap()).unwrap(),)
+        Ok((A::from_value(next_vec_value(&mut iter, 1, 0)?)?,))
     }
 }
 
 impl<A: FromValue, B: FromValue, C: FromValue> FromVec for (A, B, C) {
-    fn from_vec(values: &[Value]) -> Self
+    fn from_vec(values: &[Value]) -> Result<Self, RuleError>
     where
         Self: Sized,
     {
         let mut iter = values.iter();
-        (
-            A::from_value(iter.next().unwrap()).unwrap(),
-            B::from_value(iter.next().unwrap()).unwrap(),
-            C::from_value(iter.next().unwrap()).unwrap(),
-        )
+        Ok((
+            A::from_value(next_vec_value(&mut iter, 3, 0)?)?,
+            B::from_value(next_vec_value(&mut iter, 3, 1)?)?,
+            C::from_value(next_vec_value(&mut iter, 3, 2)?)?,
+        ))
     }
 }

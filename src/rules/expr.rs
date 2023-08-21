@@ -60,7 +60,9 @@ fn eval_expr(expr: &Expr, scope: &RuleScope) -> Result<Value> {
     let rhs_value = expr.rhs.eval(scope)?;
 
     let t = match expr.operator {
-        Operator::And | Operator::Or => return eval_bool_expr(&lhs_value, &expr.operator, &rhs_value),
+        Operator::And | Operator::Or => {
+            return eval_bool_expr(&lhs_value, &expr.operator, &rhs_value)
+        }
         Operator::Eq => Type::Bool(lhs_value.eq(&rhs_value)),
         Operator::NotEq => Type::Bool(lhs_value.ne(&rhs_value)),
         Operator::Dot => return eval_path_expr(lhs_value, rhs_value, scope),
@@ -93,7 +95,7 @@ fn eval_bool_expr(lhs_value: &Value, operator: &Operator, rhs_value: &Value) -> 
         _ => {
             // guaranteed by caller
             unreachable!()
-        },
+        }
     };
 
     // todo: better position
@@ -118,7 +120,7 @@ fn eval_path_expr(target_val: Value, member_val: Value, scope: &RuleScope) -> Re
                 MemberKind::Field => member.eval(vec![Value::new(
                     var.unwrap().clone(),
                     *target_val.position(),
-                )]),
+                )])?,
                 MemberKind::Method => Type::Method(obj.clone(), member.callable.clone()),
             }
         }
@@ -159,16 +161,14 @@ fn eval_call_expr(target_val: Value, args_val: Value, scope: &RuleScope) -> Resu
         }
     };
 
-    match func {
-        Type::Function(callable) => {
-            callable(args);
-        }
+    let result = match func {
+        Type::Function(callable) => callable(args),
         Type::Method(obj, callable) => {
             args.insert(
                 0,
                 Value::new(Type::Object(obj.clone()), *target_val.position()),
             );
-            callable(args);
+            callable(args)
         }
         _ => {
             return Err(RuleError::runtime(
@@ -179,7 +179,15 @@ fn eval_call_expr(target_val: Value, args_val: Value, scope: &RuleScope) -> Resu
                 *target_val.position(),
             ));
         }
-    }
+    };
+
+    result.map_err(|e| {
+        if e.position() == &Position::zero() {
+            RuleError::new(e.kind_owned(), *target_val.position())
+        } else {
+            e
+        }
+    })?;
 
     // todo: better position
     Ok(Value::new(Type::Bool(true), *target_val.position()))
